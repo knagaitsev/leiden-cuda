@@ -5,8 +5,13 @@ from networkx.algorithms.community import louvain_communities, leiden_communitie
 import matplotlib.pyplot as plt
 
 # Create a graph
-G = nx.karate_club_graph()
+# G = nx.karate_club_graph()
 # G = nx.read_edgelist("../data/flickr-groupmemberships/out.flickr-groupmemberships", comments="%")
+
+G = nx.read_edgelist("../validation/clique_ring.txt", nodetype=int)
+
+# to read a weighted edge list in:
+# G = nx.read_weighted_edgelist("../validation/weighted_edges.txt", nodetype=int)
 print(G)
 
 has_self_loops = any(G.has_edge(n, n) for n in G.nodes())
@@ -39,7 +44,9 @@ colors = [node_color_map[node] for node in G.nodes()]
 
 # Draw the graph
 pos = nx.spring_layout(G, seed=42)
+edge_labels = nx.get_edge_attributes(G, 'weight')
 nx.draw(G, pos, with_labels=True, node_color=colors, cmap=plt.cm.Set3, node_size=500)
+nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
 # plt.show()
 
 plt.savefig("../figs/graph1.pdf")
