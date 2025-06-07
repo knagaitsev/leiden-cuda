@@ -1,0 +1,34 @@
+conda create --prefix /pool/kir/conda/glassy1 python=3.7
+
+conda activate /pool/kir/conda/cuda-final-proj-1
+
+pip install networkx matplotlib numpy
+
+conda install -c rapidsai -c conda-forge -c nvidia cugraph cuda-version=12.0
+conda install cuda-cudart cuda-version=12.0
+
+
+
+To Use cuGraph from within networkx:
+
+conda install -c conda-forge cupy cuda-version=12.0
+conda install -c rapidsai -c conda-forge -c nvidia nx-cugraph cuda-version=12.0
+
+
+To use cudf:
+
+conda install -c rapidsai -c conda-forge -c nvidia cudf cuda-version=12.0
+
+
+NX_CUGRAPH_AUTOCONFIG=True python script.py
+
+
+For CPU:
+
+conda install nx-parallel
+
+
+
+Datasets:
+
+http://konect.cc/files/download.tsv.dimacs10-uk-2007-05.tar.bz2
