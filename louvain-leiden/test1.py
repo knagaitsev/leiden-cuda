@@ -2,17 +2,22 @@ import time
 # import community as community_louvain
 import networkx as nx
 from networkx.algorithms.community import louvain_communities, leiden_communities
+import matplotlib.pyplot as plt
 
 # Create a graph
 G = nx.karate_club_graph()
 # G = nx.read_edgelist("../data/flickr-groupmemberships/out.flickr-groupmemberships", comments="%")
 print(G)
 
+has_self_loops = any(G.has_edge(n, n) for n in G.nodes())
+
+print(f"Has self loops: {has_self_loops}")
+
 # Compute communities using the Louvain method
 start = time.time()
 
-# communities = leiden_communities(G, seed=42, resolution=1, backend="cugraph")
-communities = louvain_communities(G, seed=42, resolution=1, backend="cugraph")
+communities = leiden_communities(G, seed=42, resolution=1, backend="cugraph")
+# communities = louvain_communities(G, seed=42, resolution=1, backend="cugraph")
 
 # communities = louvain_communities(G, seed=42, resolution=1, backend="parallel")
 end = time.time()
@@ -21,5 +26,20 @@ print(f"Runtime: {end - start:.4f} seconds")
 
 print(f"Community count: {len(communities)}")
 # Print the communities
-# for i, community in enumerate(communities):
-#     print(f"Community {i+1}: {sorted(community)}")
+for i, community in enumerate(communities):
+    print(f"Community {i+1}: {sorted(community)}")
+
+node_color_map = {}
+for i, comm in enumerate(communities):
+    for node in comm:
+        node_color_map[node] = i
+
+# Generate a color for each community
+colors = [node_color_map[node] for node in G.nodes()]
+
+# Draw the graph
+pos = nx.spring_layout(G, seed=42)
+nx.draw(G, pos, with_labels=True, node_color=colors, cmap=plt.cm.Set3, node_size=500)
+# plt.show()
+
+plt.savefig("../figs/graph1.pdf")
