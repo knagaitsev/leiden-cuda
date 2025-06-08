@@ -59,34 +59,44 @@ def modularity(G):
 
     return Q
 
+def isolated_move_modularity_change(G, community_graph, node, community):
+    return 0
+
 def leiden(G):
     pass
 
 def main():
     G = nx.Graph()
     G.add_node(0, community=0)
-    G.add_node(1, community=0)
-    G.add_node(2, community=0)
-    G.add_node(3, community=0)
+    G.add_node(1, community=1)
+    G.add_node(2, community=1)
+    G.add_node(3, community=1)
 
-    G.add_edge(0, 1, weight=0.5)
+    G.add_edge(0, 1, weight=1)
     G.add_edge(1, 2, weight=1)
     G.add_edge(2, 3, weight=1)
     G.add_edge(3, 0, weight=1)
+
+    G.add_edge(0, 2, weight=1)
+    G.add_edge(1, 3, weight=1)
 
     # G = nx.read_edgelist("../validation/clique_ring.txt", nodetype=int)
 
     community_graph = nx.Graph()
 
-    p1 = CommunityData()
+    c0 = CommunityData()
+    c0.add_node(0)
 
-    p1.add_node(0)
-    p1.add_node(1)
-    p1.add_node(2)
-    p1.add_node(3)
+    c1 = CommunityData()
+    c1.add_node(1)
+    c1.add_node(2)
+    c1.add_node(3)
 
-    community_graph.add_node(0, community_data=p1)
+    community_graph.add_node(0, community_data=c0)
+    community_graph.add_node(1, community_data=c1)
 
     print(modularity(G))
+
+    print(isolated_move_modularity_change(G, community_graph, 0, 1))
 
 main()
