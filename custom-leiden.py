@@ -165,7 +165,20 @@ def construct_community_graph(G: nx.Graph):
                 else:
                     community_graph.add_edge(comm_u, comm_v, weight=weight)
 
+    assign_singleton_communities(community_graph)
+
     return community_graph
+
+def assign_singleton_communities(G):
+    i = 0
+
+    for node, node_data in G.nodes(data=True):
+        node_data["community"] = i
+
+        i += 1
+
+def louvain(G):
+    pass
 
 def leiden(G):
     pass
@@ -176,6 +189,8 @@ def main():
     G.add_node(1, community=1)
     G.add_node(2, community=1)
     G.add_node(3, community=1)
+
+    assign_singleton_communities(G)
 
     G.add_edge(0, 1, weight=1)
     G.add_edge(1, 2, weight=1)
