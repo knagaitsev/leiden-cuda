@@ -15,16 +15,14 @@ class CommunityData:
         for u, v, data in edges:
             weight = data.get("weight", 1)
 
-            # If u or v are in self.nodes, then we do not need to increment self.sum_weights_tot
-            # as it will already be in there, given that this node was adjacent to the community.
-            # We do not want to double count it.
+            # IMPORTANT: all the sums here are meant to be double counting
+
+            self.sum_weights_tot += weight
 
             if u in self.nodes:
-                self.sum_weights_in += weight
+                self.sum_weights_in += 2 * weight
             elif v in self.nodes:
-                self.sum_weights_in += weight
-            else:
-                self.sum_weights_tot += weight
+                self.sum_weights_in += 2 * weight
         
         self.nodes[node] = True
 
@@ -79,18 +77,23 @@ def modularity(G):
             if not same_comm:
                 continue
 
-            if not G.has_edge(i, j):
-                continue
+            if i == j:
+                k_i = vertex_total_edge_weight(G, i)
 
-            data_ij = G[i][j]
-            A_ij = data_ij.get("weight", 1)
-            
-            k_i = vertex_total_edge_weight(G, i)
-            k_j = vertex_total_edge_weight(G, j)
+                v = - ((k_i**2) / (2 * m))
 
-            v = A_ij - ((k_i * k_j) / (2 * m))
+                tot += v
+            elif G.has_edge(i, j):
 
-            tot += v
+                data_ij = G[i][j]
+                A_ij = data_ij.get("weight", 1)
+                
+                k_i = vertex_total_edge_weight(G, i)
+                k_j = vertex_total_edge_weight(G, j)
+
+                v = A_ij - ((k_i * k_j) / (2 * m))
+
+                tot += v
     
     Q = (1 / (2 * m)) * tot
 
@@ -113,7 +116,7 @@ def isolated_move_modularity_change(G, community_graph, node, community):
 
     print(k_i_in, k_i)
 
-    new_comm_Q = ((sum_in + k_i_in) / (2 * m)) - ((sum_tot + k_i) / (2 * m))**2
+    new_comm_Q = ((sum_in + 2 * k_i_in) / (2 * m)) - ((sum_tot + k_i) / (2 * m))**2
     prev_comm_Q = (sum_in / (2 * m)) - (sum_tot / (2 * m))**2 - (k_i / (2 * m))**2
 
     print(new_comm_Q, prev_comm_Q)
