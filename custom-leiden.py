@@ -134,6 +134,39 @@ def move_isolated_node(G: nx.Graph, community_graph: nx.Graph, node, community):
     new_community = community_graph.nodes[community]["community_data"]
     new_community.add_node(node)
 
+def construct_community_graph(G: nx.Graph):
+    community_graph = nx.Graph()
+
+    for node, node_data in G.nodes(data=True):
+        community = node_data["community"]
+
+        if community in community_graph:
+            c = community_graph.nodes[community]["community_data"]
+            c.add_node(node)
+        else:
+            c = CommunityData(G)
+            c.add_node(node)
+
+            community_graph.add_node(community, community_data=c)
+
+        edges = G.edges(node, data=True)
+        for u, v, edge_data in edges:
+            weight = edge_data.get("weight", 1)
+            
+            data_u = G.nodes[u]
+            data_v = G.nodes[v]
+            comm_u = data_u["community"]
+            comm_v = data_v["community"]
+
+            if comm_u != comm_v and comm_u in community_graph and comm_v in community_graph:
+                if (comm_u, comm_v) in community_graph.edges:
+                    edge_data = community_graph.get_edge_data(comm_u, comm_v)
+                    edge_data["weight"] += weight
+                else:
+                    community_graph.add_edge(comm_u, comm_v, weight=weight)
+
+    return community_graph
+
 def leiden(G):
     pass
 
@@ -158,18 +191,17 @@ def main():
 
     # G = nx.read_edgelist("../validation/clique_ring.txt", nodetype=int)
 
-    community_graph = nx.Graph()
+    # community_graph = nx.Graph()
+    # c0 = CommunityData(G)
+    # c0.add_node(0)
+    # c1 = CommunityData(G)
+    # c1.add_node(1)
+    # c1.add_node(2)
+    # c1.add_node(3)
+    # community_graph.add_node(0, community_data=c0)
+    # community_graph.add_node(1, community_data=c1)
 
-    c0 = CommunityData(G)
-    c0.add_node(0)
-
-    c1 = CommunityData(G)
-    c1.add_node(1)
-    c1.add_node(2)
-    c1.add_node(3)
-
-    community_graph.add_node(0, community_data=c0)
-    community_graph.add_node(1, community_data=c1)
+    community_graph = construct_community_graph(G)
 
     print(f"Modularity: {modularity(G)}")
 
