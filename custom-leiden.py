@@ -66,8 +66,7 @@ def vertex_total_edge_weight(G, node):
     return tot
 
 def modularity(G):
-    m = total_edge_weight(G)
-    print(f"Total edge weight: {m}")
+    m = G.graph["m"]
 
     tot = 0
 
@@ -100,30 +99,40 @@ def modularity(G):
     return Q
 
 def isolated_move_modularity_change(G, community_graph, node, community):
-    # TODO: we should be passing this in, not recomputing it
-    m = total_edge_weight(G)
+    m = G.graph["m"]
 
     comm_data = community_graph.nodes[community]["community_data"]
 
     sum_in = comm_data.sum_weights_in
     sum_tot = comm_data.sum_weights_tot
 
-    print(sum_in, sum_tot)
+    # print(sum_in, sum_tot)
 
     # TODO: could be more efficient by counting these both at once
     k_i_in = vertex_total_in_edge_weight(G, node, community)
     k_i = vertex_total_edge_weight(G, node)
 
-    print(k_i_in, k_i)
+    # print(k_i_in, k_i)
 
     new_comm_Q = ((sum_in + 2 * k_i_in) / (2 * m)) - ((sum_tot + k_i) / (2 * m))**2
     prev_comm_Q = (sum_in / (2 * m)) - (sum_tot / (2 * m))**2 - (k_i / (2 * m))**2
 
-    print(new_comm_Q, prev_comm_Q)
+    # print(new_comm_Q, prev_comm_Q)
 
     delta_Q = new_comm_Q - prev_comm_Q
 
     return delta_Q
+
+def move_isolated_node(G: nx.Graph, community_graph: nx.Graph, node, community):
+    node_data = G.nodes[node]
+    prev_community = node_data["community"]
+
+    community_graph.remove_node(prev_community)
+
+    node_data["community"] = community
+
+    new_community = community_graph.nodes[community]["community_data"]
+    new_community.add_node(node)
 
 def leiden(G):
     pass
@@ -143,6 +152,10 @@ def main():
     G.add_edge(0, 2, weight=1)
     G.add_edge(1, 3, weight=1)
 
+    m = total_edge_weight(G)
+    G.graph["m"] = m
+    print(f"Total edge weight: {m}")
+
     # G = nx.read_edgelist("../validation/clique_ring.txt", nodetype=int)
 
     community_graph = nx.Graph()
@@ -158,8 +171,12 @@ def main():
     community_graph.add_node(0, community_data=c0)
     community_graph.add_node(1, community_data=c1)
 
-    print(modularity(G))
+    print(f"Modularity: {modularity(G)}")
 
-    print(isolated_move_modularity_change(G, community_graph, 0, 1))
+    print(f"Delta: {isolated_move_modularity_change(G, community_graph, 0, 1)}")
+
+    move_isolated_node(G, community_graph, 0, 1)
+
+    print(f"Modularity: {modularity(G)}")
 
 main()
