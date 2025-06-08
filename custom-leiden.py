@@ -1,4 +1,5 @@
 import time
+import random
 # import community as community_louvain
 import networkx as nx
 
@@ -177,6 +178,69 @@ def assign_singleton_communities(G):
 
         i += 1
 
+def is_in_singleton_community(G, node):
+    edges = G.edges(node, data=True)
+
+    for u, v, edge_data in edges:
+        data_u = G.nodes[u]
+        data_v = G.nodes[v]
+        comm_u = data_u["community"]
+        comm_v = data_v["community"]
+
+        if comm_u == comm_v:
+            return False
+
+    return True
+
+def louvain_move_nodes(G, community_graph):
+    while True:
+        nodes = list(G.nodes)
+        random.shuffle(nodes)
+
+        num_moves = 0
+
+        for node in nodes:
+            # TODO: need to lift this restriction later, but currently the function only works
+            # when we attempt to move singletons
+            if not is_in_singleton_community(G, node):
+                continue
+
+            node_data = G.nodes[node]
+            curr_comm = node_data["community"]
+
+            best_comm = curr_comm
+            best_delta = 0
+            edges = G.edges(node, data=True)
+            for u, v, edge_data in edges:
+                data_u = G.nodes[u]
+                data_v = G.nodes[v]
+                comm_u = data_u["community"]
+                comm_v = data_v["community"]
+
+                candidate_comm = comm_u
+                if comm_u == curr_comm:
+                    candidate_comm = comm_v
+                
+                if candidate_comm == curr_comm or candidate_comm == best_comm:
+                    continue
+                
+                # TODO: node may not be in an isolated community, need to adjust accordingly
+                delta = isolated_move_modularity_change(G, community_graph, node, candidate_comm)
+
+                if delta > best_delta:
+                    best_delta = delta
+                    best_comm = candidate_comm
+        
+            if best_comm != curr_comm:
+                print(f"Delta: {best_delta}")
+                print(f"MOVED {node} {best_comm}")
+                move_isolated_node(G, community_graph, node, best_comm)
+
+                num_moves += 1
+
+        if num_moves == 0:
+            break
+
 def louvain(G):
     pass
 
@@ -220,9 +284,11 @@ def main():
 
     print(f"Modularity: {modularity(G)}")
 
-    print(f"Delta: {isolated_move_modularity_change(G, community_graph, 0, 1)}")
+    # print(f"Delta: {isolated_move_modularity_change(G, community_graph, 0, 1)}")
 
-    move_isolated_node(G, community_graph, 0, 1)
+    # move_isolated_node(G, community_graph, 0, 1)
+
+    louvain_move_nodes(G, community_graph)
 
     print(f"Modularity: {modularity(G)}")
 
