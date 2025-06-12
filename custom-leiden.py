@@ -38,8 +38,6 @@ def total_edge_weight(G):
 
     return tot
 
-# important: The "or" in here makes the assumption that this vertex is not yet
-# a part of the community (it would need to be "and" if already a member)
 def vertex_total_in_edge_weight(G, node, community):
     edges = G.edges(node, data=True)
 
@@ -50,8 +48,10 @@ def vertex_total_in_edge_weight(G, node, community):
         data_v = G.nodes[v]
         comm_u = data_u["community"]
         comm_v = data_v["community"]
-
-        if community == comm_u or community == comm_v:
+        
+        # make sure we are not comparing the node's community against it's own community,
+        # hence the !=
+        if (node != u and community == comm_u) or (node != v and community == comm_v):
             tot += weight
     
     return tot
@@ -99,28 +99,43 @@ def modularity(G):
 
     return Q
 
-def isolated_move_modularity_change(G, community_graph, node, community):
-    m = G.graph["m"]
-
-    comm_data = community_graph.nodes[community]["community_data"]
+def get_comm_Q(m, community_graph, comm, diff_k_i_in, diff_k_i):
+    comm_data = community_graph.nodes[comm]["community_data"]
 
     sum_in = comm_data.sum_weights_in
     sum_tot = comm_data.sum_weights_tot
 
-    # print(sum_in, sum_tot)
+    return ((sum_in + 2 * diff_k_i_in) / (2 * m)) - ((sum_tot + diff_k_i) / (2 * m))**2
+
+
+def move_modularity_change(G, community_graph, node, next_comm):
+    m = G.graph["m"]
+
+    node_data = G.nodes[node]
+    curr_comm = node_data["community"]
 
     # TODO: could be more efficient by counting these both at once
-    k_i_in = vertex_total_in_edge_weight(G, node, community)
+    curr_k_i_in = vertex_total_in_edge_weight(G, node, curr_comm)
+    next_k_i_in = vertex_total_in_edge_weight(G, node, next_comm)
     k_i = vertex_total_edge_weight(G, node)
 
     # print(k_i_in, k_i)
 
-    new_comm_Q = ((sum_in + 2 * k_i_in) / (2 * m)) - ((sum_tot + k_i) / (2 * m))**2
-    prev_comm_Q = (sum_in / (2 * m)) - (sum_tot / (2 * m))**2 - (k_i / (2 * m))**2
+    # new_comm_Q = ((sum_in + 2 * k_i_in) / (2 * m)) - ((sum_tot + k_i) / (2 * m))**2
+    # old_comm_Q = (sum_in / (2 * m)) - (sum_tot / (2 * m))**2 - (k_i / (2 * m))**2
+
+    curr_old_Q = get_comm_Q(m, community_graph, curr_comm, 0, 0)
+    curr_new_Q = get_comm_Q(m, community_graph, curr_comm, -curr_k_i_in, -k_i)
+
+    next_old_Q = get_comm_Q(m, community_graph, next_comm, 0, 0)
+    next_new_Q = get_comm_Q(m, community_graph, next_comm, next_k_i_in, k_i)
+
+    new_Q = next_new_Q + curr_new_Q
+    old_Q = next_old_Q + curr_old_Q
 
     # print(new_comm_Q, prev_comm_Q)
 
-    delta_Q = new_comm_Q - prev_comm_Q
+    delta_Q = new_Q - old_Q
 
     return delta_Q
 
@@ -200,10 +215,8 @@ def louvain_move_nodes(G, community_graph):
         num_moves = 0
 
         for node in nodes:
-            # TODO: need to lift this restriction later, but currently the function only works
-            # when we attempt to move singletons
-            if not is_in_singleton_community(G, node):
-                continue
+            # if not is_in_singleton_community(G, node):
+            #     continue
 
             node_data = G.nodes[node]
             curr_comm = node_data["community"]
@@ -223,9 +236,8 @@ def louvain_move_nodes(G, community_graph):
                 
                 if candidate_comm == curr_comm or candidate_comm == best_comm:
                     continue
-                
-                # TODO: node may not be in an isolated community, need to adjust accordingly
-                delta = isolated_move_modularity_change(G, community_graph, node, candidate_comm)
+
+                delta = move_modularity_change(G, community_graph, node, candidate_comm)
 
                 if delta > best_delta:
                     best_delta = delta
