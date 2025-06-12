@@ -141,8 +141,6 @@ def move_modularity_change(G, community_graph, node, next_comm):
     next_k_i_in = vertex_total_in_edge_weight(G, node, next_comm)
     k_i = vertex_total_edge_weight(G, node)
 
-    # print(k_i_in, k_i)
-
     # new_comm_Q = ((sum_in + 2 * k_i_in) / (2 * m)) - ((sum_tot + k_i) / (2 * m))**2
     # old_comm_Q = (sum_in / (2 * m)) - (sum_tot / (2 * m))**2 - (k_i / (2 * m))**2
 
@@ -206,6 +204,8 @@ def construct_community_graph(G: nx.Graph):
         #             edge_data["weight"] += weight
         #         else:
         #             community_graph.add_edge(comm_u, comm_v, weight=weight)
+
+    assign_singleton_communities(community_graph)
 
     return community_graph
 
@@ -319,11 +319,16 @@ def propagate_partitions(G):
     
     parent = G.graph["parent"]
 
-    for comm, comm_node_data in G.nodes(data=True):
+    for _, comm_node_data in G.nodes(data=True):
+        curr_comm = comm_node_data["community"]
+        
         comm_data = comm_node_data["community_data"]
         for node in comm_data.nodes.keys():
             node_data = parent.nodes[node]
-            node_data["community"] = comm
+            node_data["community"] = curr_comm
+    
+    # tail recursion propagating partitions
+    propagate_partitions(parent)
 
 def get_final_communities(G):
     comms = {}
@@ -342,13 +347,12 @@ def custom_louvain(G):
 
     iter = 0
 
+    assign_singleton_communities(G)
+
     while True:
         print(f"Running Louvain iteration: {iter}")
-
-        assign_singleton_communities(G)
         m = total_edge_weight(G)
         G.graph["m"] = m
-        print(f"m: {m}")
 
         community_graph = construct_community_graph(G)
         # if there is no parent, it must be the root graph
@@ -363,7 +367,7 @@ def custom_louvain(G):
 
         iter += 1
 
-    propagate_partitions(G)
+    propagate_partitions(community_graph)
 
     return get_final_communities(root_graph)
 
