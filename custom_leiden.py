@@ -331,10 +331,14 @@ def get_final_communities(G):
 
     return list(comms.values())
 
-def louvain(G):
+def custom_louvain(G):
     root_graph = G
 
     while True:
+        assign_singleton_communities(G)
+        m = total_edge_weight(G)
+        G.graph["m"] = m
+
         community_graph = construct_community_graph(G)
         # if there is no parent, it must be the root graph
         community_graph.graph["parent"] = G
@@ -344,14 +348,13 @@ def louvain(G):
             break
 
         aggregate_graph(G, community_graph)
-        assign_singleton_communities(community_graph)
         G = community_graph
 
     propagate_partitions(G)
 
     return get_final_communities(root_graph)
 
-def leiden(G):
+def custom_leiden(G):
     pass
 
 def main():
@@ -391,6 +394,7 @@ def main():
     # print(f"Modularity: {modularity(G)}")
     # louvain_move_nodes(G, community_graph)
     # print(f"Modularity: {modularity(G)}")
-    print(louvain(G))
+    print(custom_louvain(G))
 
-main()
+if __name__ == "main":
+    main()

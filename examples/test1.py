@@ -3,12 +3,26 @@ import time
 import networkx as nx
 from networkx.algorithms.community import louvain_communities, leiden_communities
 import matplotlib.pyplot as plt
+import sys
+import os
+from pathlib import Path
+
+parent_dir = Path(__file__).resolve().parent.parent
+
+if str(parent_dir) not in sys.path:
+    sys.path.insert(0, str(parent_dir))
+
+from custom_leiden import custom_louvain
+
+curr_path = Path(os.path.realpath(os.path.dirname(__file__)))
 
 # Create a graph
 # G = nx.karate_club_graph()
 # G = nx.read_edgelist("../data/flickr-groupmemberships/out.flickr-groupmemberships", comments="%")
 
-G = nx.read_edgelist("../validation/clique_ring.txt", nodetype=int)
+data_path = Path.resolve(curr_path / "../validation/clique_ring.txt")
+
+G = nx.read_edgelist(data_path, nodetype=int)
 
 # to read a weighted edge list in:
 # G = nx.read_weighted_edgelist("../validation/weighted_edges.txt", nodetype=int)
@@ -21,8 +35,9 @@ print(f"Has self loops: {has_self_loops}")
 # Compute communities using the Louvain method
 start = time.time()
 
-communities = leiden_communities(G, seed=42, resolution=1, backend="cugraph")
+# communities = leiden_communities(G, seed=42, resolution=1, backend="cugraph")
 # communities = louvain_communities(G, seed=42, resolution=1, backend="cugraph")
+communities = custom_louvain(G)
 
 # communities = louvain_communities(G, seed=42, resolution=1, backend="parallel")
 end = time.time()
@@ -49,4 +64,6 @@ nx.draw(G, pos, with_labels=True, node_color=colors, cmap=plt.cm.Set3, node_size
 nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
 # plt.show()
 
-plt.savefig("../figs/graph1.pdf")
+figs_dir = Path.resolve(curr_path / "../figs")
+
+plt.savefig(figs_dir / "graph2.pdf")
