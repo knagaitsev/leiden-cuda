@@ -24,7 +24,10 @@ class CommunityData:
                 self.sum_weights_in += 2 * weight
             elif v in self.nodes:
                 self.sum_weights_in += 2 * weight
-        
+            elif u == v:
+                # self-edge gets added here too
+                self.sum_weights_in += 2 * weight
+
         self.nodes[node] = True
 
     def remove_node(self, node):
@@ -70,7 +73,10 @@ def vertex_total_in_edge_weight(G, node, community):
         # hence the !=
         if (node != u and community == comm_u) or (node != v and community == comm_v):
             tot += weight
-    
+        elif node == u and node == v:
+            # self-edges should be included here too
+            tot += weight
+
     return tot
 
 def vertex_total_edge_weight(G, node):
@@ -185,23 +191,21 @@ def construct_community_graph(G: nx.Graph):
 
             community_graph.add_node(community, community_data=c)
 
-        edges = G.edges(node, data=True)
-        for u, v, edge_data in edges:
-            weight = edge_data.get("weight", 1)
+        # edges = G.edges(node, data=True)
+        # for u, v, edge_data in edges:
+        #     weight = edge_data.get("weight", 1)
             
-            data_u = G.nodes[u]
-            data_v = G.nodes[v]
-            comm_u = data_u["community"]
-            comm_v = data_v["community"]
+        #     data_u = G.nodes[u]
+        #     data_v = G.nodes[v]
+        #     comm_u = data_u["community"]
+        #     comm_v = data_v["community"]
 
-            if comm_u != comm_v and comm_u in community_graph and comm_v in community_graph:
-                if (comm_u, comm_v) in community_graph.edges:
-                    edge_data = community_graph.get_edge_data(comm_u, comm_v)
-                    edge_data["weight"] += weight
-                else:
-                    community_graph.add_edge(comm_u, comm_v, weight=weight)
-
-    assign_singleton_communities(community_graph)
+        #     if comm_u != comm_v and comm_u in community_graph and comm_v in community_graph:
+        #         if (comm_u, comm_v) in community_graph.edges:
+        #             edge_data = community_graph.get_edge_data(comm_u, comm_v)
+        #             edge_data["weight"] += weight
+        #         else:
+        #             community_graph.add_edge(comm_u, comm_v, weight=weight)
 
     return community_graph
 
@@ -264,8 +268,8 @@ def louvain_move_nodes(G, community_graph):
                     best_comm = candidate_comm
         
             if best_comm != curr_comm:
-                print(f"Delta: {best_delta}")
-                print(f"MOVED {node} {best_comm}")
+                # print(f"Delta: {best_delta}")
+                # print(f"MOVED {node} {best_comm}")
                 move_node(G, community_graph, node, best_comm)
 
                 num_moves += 1
@@ -276,7 +280,9 @@ def louvain_move_nodes(G, community_graph):
 def all_communities_one_node(community_graph):
     for _, node_data in community_graph.nodes(data=True):
         comm_data = node_data["community_data"]
-        if len(comm_data) > 1:
+        if len(comm_data) == 0:
+            raise Exception("each community should have at least one node")
+        elif len(comm_data) > 1:
             return False
     
     return True
@@ -334,10 +340,15 @@ def get_final_communities(G):
 def custom_louvain(G):
     root_graph = G
 
+    iter = 0
+
     while True:
+        print(f"Running Louvain iteration: {iter}")
+
         assign_singleton_communities(G)
         m = total_edge_weight(G)
         G.graph["m"] = m
+        print(f"m: {m}")
 
         community_graph = construct_community_graph(G)
         # if there is no parent, it must be the root graph
@@ -350,12 +361,11 @@ def custom_louvain(G):
         aggregate_graph(G, community_graph)
         G = community_graph
 
+        iter += 1
+
     propagate_partitions(G)
 
     return get_final_communities(root_graph)
-
-def custom_leiden(G):
-    pass
 
 def main():
     G = nx.Graph()
@@ -396,5 +406,5 @@ def main():
     # print(f"Modularity: {modularity(G)}")
     print(custom_louvain(G))
 
-if __name__ == "main":
+if __name__ == "__main__":
     main()

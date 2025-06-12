@@ -20,12 +20,11 @@ curr_path = Path(os.path.realpath(os.path.dirname(__file__)))
 # G = nx.karate_club_graph()
 # G = nx.read_edgelist("../data/flickr-groupmemberships/out.flickr-groupmemberships", comments="%")
 
-data_path = Path.resolve(curr_path / "../validation/clique_ring.txt")
+# data_path = Path.resolve(curr_path / "../validation/clique_ring.txt")
+# G = nx.read_edgelist(data_path, nodetype=int)
 
-G = nx.read_edgelist(data_path, nodetype=int)
-
-# to read a weighted edge list in:
-# G = nx.read_weighted_edgelist("../validation/weighted_edges.txt", nodetype=int)
+data_path = Path.resolve(curr_path / "../validation/clique_ring_weighted.txt")
+G = nx.read_weighted_edgelist(data_path, nodetype=int)
 print(G)
 
 has_self_loops = any(G.has_edge(n, n) for n in G.nodes())
