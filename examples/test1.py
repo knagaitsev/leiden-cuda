@@ -12,7 +12,7 @@ parent_dir = Path(__file__).resolve().parent.parent
 if str(parent_dir) not in sys.path:
     sys.path.insert(0, str(parent_dir))
 
-from custom_leiden import custom_louvain
+from custom_louvain import custom_louvain
 
 curr_path = Path(os.path.realpath(os.path.dirname(__file__)))
 
