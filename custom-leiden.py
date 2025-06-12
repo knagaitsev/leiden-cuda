@@ -27,8 +27,25 @@ class CommunityData:
         
         self.nodes[node] = True
 
+    def remove_node(self, node):
+        del self.nodes[node]
+
+        edges = self.G.edges(node, data=True)
+        for u, v, data in edges:
+            weight = data.get("weight", 1)
+
+            self.sum_weights_tot -= weight
+
+            if u in self.nodes:
+                self.sum_weights_in -= 2 * weight
+            elif v in self.nodes:
+                self.sum_weights_in -= 2 * weight
+
     def nodes(self):
         return self.nodes.keys()
+
+    def __len__(self):
+        return len(self.nodes)
 
 def total_edge_weight(G):
     tot = 0
@@ -77,14 +94,7 @@ def modularity(G):
             if not same_comm:
                 continue
 
-            if i == j:
-                k_i = vertex_total_edge_weight(G, i)
-
-                v = - ((k_i**2) / (2 * m))
-
-                tot += v
-            elif G.has_edge(i, j):
-
+            if G.has_edge(i, j):
                 data_ij = G[i][j]
                 A_ij = data_ij.get("weight", 1)
                 
@@ -94,7 +104,13 @@ def modularity(G):
                 v = A_ij - ((k_i * k_j) / (2 * m))
 
                 tot += v
-    
+            elif i == j:
+                k_i = vertex_total_edge_weight(G, i)
+
+                v = - ((k_i**2) / (2 * m))
+
+                tot += v
+
     Q = (1 / (2 * m)) * tot
 
     return Q
@@ -139,16 +155,20 @@ def move_modularity_change(G, community_graph, node, next_comm):
 
     return delta_Q
 
-def move_isolated_node(G: nx.Graph, community_graph: nx.Graph, node, community):
+def move_node(G: nx.Graph, community_graph: nx.Graph, node, community):
     node_data = G.nodes[node]
     prev_community = node_data["community"]
 
-    community_graph.remove_node(prev_community)
+    prev_comm_data = community_graph.nodes[prev_community]["community_data"]
+    prev_comm_data.remove_node(node)
+
+    if len(prev_comm_data) == 0:
+        community_graph.remove_node(prev_community)
 
     node_data["community"] = community
 
-    new_community = community_graph.nodes[community]["community_data"]
-    new_community.add_node(node)
+    new_comm_data = community_graph.nodes[community]["community_data"]
+    new_comm_data.add_node(node)
 
 def construct_community_graph(G: nx.Graph):
     community_graph = nx.Graph()
@@ -246,15 +266,90 @@ def louvain_move_nodes(G, community_graph):
             if best_comm != curr_comm:
                 print(f"Delta: {best_delta}")
                 print(f"MOVED {node} {best_comm}")
-                move_isolated_node(G, community_graph, node, best_comm)
+                move_node(G, community_graph, node, best_comm)
 
                 num_moves += 1
 
         if num_moves == 0:
             break
 
+def all_communities_one_node(community_graph):
+    for _, node_data in community_graph.nodes(data=True):
+        comm_data = node_data["community_data"]
+        if len(comm_data) > 1:
+            return False
+    
+    return True
+
+def aggregate_graph(G, community_graph):
+    # for comm, comm_node_data in community_graph.nodes(data=True):
+    #     comm_data = comm_node_data["community_data"]
+
+    edges = G.edges(data=True)
+    for u, v, edge_data in edges:
+        weight = edge_data.get("weight", 1)
+
+        data_u = G.nodes[u]
+        data_v = G.nodes[v]
+        comm_u = data_u["community"]
+        comm_v = data_v["community"]
+
+        # add edge weight to the community_graph, simply increasing the weight if the edge already exists
+        # Important: this should include adding self-edges for the community to itself
+
+        if community_graph.has_edge(comm_u, comm_v):
+            edge_data = community_graph[comm_u][comm_v]
+            if "weight" in edge_data:
+                edge_data["weight"] += weight
+            else:
+                edge_data["weight"] = weight
+        else:
+            community_graph.add_edge(comm_u, comm_v, weight=weight)
+
+def propagate_partitions(G):
+    # we are at the root graph, so nothing to propagate
+    if "parent" not in G.graph:
+        return
+    
+    parent = G.graph["parent"]
+
+    for comm, comm_node_data in G.nodes(data=True):
+        comm_data = comm_node_data["community_data"]
+        for node in comm_data.nodes.keys():
+            node_data = parent.nodes[node]
+            node_data["community"] = comm
+
+def get_final_communities(G):
+    comms = {}
+
+    for node, data in G.nodes(data=True):
+        comm = data["community"]
+        if comm in comms:
+            comms[comm].append(node)
+        else:
+            comms[comm] = [node]
+
+    return list(comms.values())
+
 def louvain(G):
-    pass
+    root_graph = G
+
+    while True:
+        community_graph = construct_community_graph(G)
+        # if there is no parent, it must be the root graph
+        community_graph.graph["parent"] = G
+
+        louvain_move_nodes(G, community_graph)
+        if all_communities_one_node(community_graph):
+            break
+
+        aggregate_graph(G, community_graph)
+        assign_singleton_communities(community_graph)
+        G = community_graph
+
+    propagate_partitions(G)
+
+    return get_final_communities(root_graph)
 
 def leiden(G):
     pass
@@ -292,16 +387,10 @@ def main():
     # community_graph.add_node(0, community_data=c0)
     # community_graph.add_node(1, community_data=c1)
 
-    community_graph = construct_community_graph(G)
-
-    print(f"Modularity: {modularity(G)}")
-
-    # print(f"Delta: {isolated_move_modularity_change(G, community_graph, 0, 1)}")
-
-    # move_isolated_node(G, community_graph, 0, 1)
-
-    louvain_move_nodes(G, community_graph)
-
-    print(f"Modularity: {modularity(G)}")
+    # community_graph = construct_community_graph(G)
+    # print(f"Modularity: {modularity(G)}")
+    # louvain_move_nodes(G, community_graph)
+    # print(f"Modularity: {modularity(G)}")
+    print(louvain(G))
 
 main()
