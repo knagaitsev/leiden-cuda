@@ -32,3 +32,10 @@ conda install nx-parallel
 Datasets:
 
 http://konect.cc/files/download.tsv.dimacs10-uk-2007-05.tar.bz2
+
+
+
+Leiden notes:
+
+- instead of each community immediately becoming a singleton as in the Louvain algorithm, allow the partition to be broken up into multiple nodes during refinement
+    - rather than just being a single node with a self-edge as in Louvain
