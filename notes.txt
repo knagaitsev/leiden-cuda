@@ -39,3 +39,22 @@ Leiden notes:
 
 - instead of each community immediately becoming a singleton as in the Louvain algorithm, allow the partition to be broken up into multiple nodes during refinement
     - rather than just being a single node with a self-edge as in Louvain
+
+
+In Leiden we form the following layers:
+- original graph -- orig
+- singleton communities (initial iteration only) -- this becomes P (orig underlying)
+- refined partition communities -- P_refined (orig underlying)
+- partition of the refined partition (from what was found during MoveNodesFast) -- P (P_refined underlying)
+
+In the next iteration:
+- refined partition is the graph we operate on -- P_refined
+- rather than forming singleton communities, use "partition of the refined partition" as communities for the next iteration -- this becomes P_2 (P_refined underlying)
+- refined partition communities -- P_refined_2 (P_refined underlying)
+- "partition of the refined partition" -- P_2 (P_refined_2 underlying)
+
+So to propagate communities back to orig, we only need to propagate through from:
+    - P_refined_2 -> P_refined -> orig
+
+Note that "P" always has its corresponding P_refined underlying it. It is useful for passing the community information to the next Leiden iteration, but it is not needed for final community propagation
+

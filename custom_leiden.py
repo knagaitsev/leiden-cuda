@@ -209,6 +209,24 @@ def construct_community_graph(G: nx.Graph):
 
     return community_graph
 
+# returns refined partition
+def refine_partition(G, p):
+    # TODO: should make a new graph that has G underlying it, without modifying G or p
+    p_refined = p
+
+    p_refined.graph["parent"] = G
+
+    return p
+
+# returns new community graph for p_refined, rather than the graph that
+# underlies both p and p_refined
+# this graph should be the equivalent of P, but now encapsulating P_refined rather than G
+def maintain_p(p, p_refined):
+    # TODO
+    p = construct_community_graph(p_refined)
+    p.graph["parent"] = p_refined
+    return p
+
 def assign_singleton_communities(G):
     i = 0
 
@@ -217,21 +235,7 @@ def assign_singleton_communities(G):
 
         i += 1
 
-def is_in_singleton_community(G, node):
-    edges = G.edges(node, data=True)
-
-    for u, v, edge_data in edges:
-        data_u = G.nodes[u]
-        data_v = G.nodes[v]
-        comm_u = data_u["community"]
-        comm_v = data_v["community"]
-
-        if comm_u == comm_v:
-            return False
-
-    return True
-
-def louvain_move_nodes(G, community_graph):
+def leiden_move_nodes(G, community_graph):
     while True:
         nodes = list(G.nodes)
         random.shuffle(nodes)
@@ -239,9 +243,6 @@ def louvain_move_nodes(G, community_graph):
         num_moves = 0
 
         for node in nodes:
-            # if not is_in_singleton_community(G, node):
-            #     continue
-
             node_data = G.nodes[node]
             curr_comm = node_data["community"]
 
@@ -342,28 +343,36 @@ def get_final_communities(G):
 
     return list(comms.values())
 
-def custom_louvain(G):
+
+
+def custom_leiden(G, gamma=1):
     root_graph = G
 
     num_iter = 0
 
     assign_singleton_communities(G)
 
+    p = construct_community_graph(G)
+    # if there is no parent, it must be the root graph
+    p.graph["parent"] = G
+
     while True:
-        print(f"Running Louvain iteration: {num_iter}")
+        print(f"Running Leiden iteration: {num_iter}")
         m = total_edge_weight(G)
         G.graph["m"] = m
+        G.graph["gamma"] = gamma
 
-        community_graph = construct_community_graph(G)
-        # if there is no parent, it must be the root graph
-        community_graph.graph["parent"] = G
-
-        louvain_move_nodes(G, community_graph)
-        if all_communities_one_node(community_graph):
+        leiden_move_nodes(G, p)
+        if all_communities_one_node(p):
             break
 
-        aggregate_graph(G, community_graph)
-        G = community_graph
+        p_refined = refine_partition(G, p)
+        # note -- p_refined is a slightly broken up version of the partitions found in leiden_move_nodes
+        aggregate_graph(G, p_refined)
+        G = p_refined
+
+        # maintain partition P, this just makes it a partition of p_refined rather than the previous G
+        p = maintain_p(p, p_refined)
 
         num_iter += 1
 
@@ -375,12 +384,10 @@ def custom_louvain(G):
 
 def main():
     G = nx.Graph()
-    G.add_node(0, community=0)
-    G.add_node(1, community=1)
-    G.add_node(2, community=1)
-    G.add_node(3, community=1)
-
-    assign_singleton_communities(G)
+    G.add_node(0)
+    G.add_node(1)
+    G.add_node(2)
+    G.add_node(3)
 
     G.add_edge(0, 1, weight=1)
     G.add_edge(1, 2, weight=1)
@@ -410,7 +417,7 @@ def main():
     # print(f"Modularity: {modularity(G)}")
     # louvain_move_nodes(G, community_graph)
     # print(f"Modularity: {modularity(G)}")
-    print(custom_louvain(G))
+    print(custom_leiden(G, gamma=0.7))
 
 if __name__ == "__main__":
     main()
