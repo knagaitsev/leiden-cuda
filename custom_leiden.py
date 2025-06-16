@@ -208,8 +208,10 @@ def is_in_singleton_community(G, node):
     return True
 
 # TODO: can we maintain a version of P which encompasses P_refined at the same time that we build P_refined?
-def merge_nodes_subset(G, p_refined, p_new, S: CommunityData, gamma=1, theta=1):
+def merge_nodes_subset(G, p_refined, S: CommunityData, gamma=0.05, theta=1):
     R = []
+
+    remaining_comms = set()
 
     S_tot = 0
     for node in S.nodes.keys():
@@ -218,11 +220,16 @@ def merge_nodes_subset(G, p_refined, p_new, S: CommunityData, gamma=1, theta=1):
     for node in S.nodes.keys():
         # consider only nodes that are well connected within subset S, put them in R
         comm = G.nodes[node]["community"]
+        remaining_comms.insert(comm)
 
+        # these have nothing to do with communities since all nodes will have been placed in singleton communities
+        # directly prior to the call of this function -- the only thing we have to be concerned about is self-edges, which should
+        # be removed for v_out
         v_in = vertex_total_in_edge_weight(G, node, comm)
         v_tot = vertex_total_edge_weight(G, node)
+        v_out = v_tot - v_in
 
-        if v_in >= gamma * v_tot * (S_tot - v_tot):
+        if v_out >= gamma * v_tot * (S_tot - v_tot):
             R.append(node)
 
     random.shuffle(R)
@@ -230,21 +237,22 @@ def merge_nodes_subset(G, p_refined, p_new, S: CommunityData, gamma=1, theta=1):
     for v in R:
         if not is_in_singleton_community(G, v):
             continue
-        
+
         # consider only well-connected communities
         T = []
         # this tells us what community in p_refined v belongs to
-        v_comm = G.nodes[v]["community"]
+        curr_comm = G.nodes[v]["community"]
         # this tells us what community in p_new p_refined belongs to
-        p_comm = p_refined.nodes[v_comm]["community"]
+        p_refined_comm = p_refined.nodes[curr_comm]["community"]
         
-        p_comm_data = p_new.nodes[p_comm]["community_data"]
+        # p_comm_data = p_new.nodes[p_comm]["community_data"]
 
-        for c in p_comm_data.nodes:
-            c_in = vertex_total_in_edge_weight(p_refined, c, p_comm)
+        for c in remaining_comms:
+            c_in = vertex_total_in_edge_weight(p_refined, c, p_refined_comm)
             c_tot = vertex_total_edge_weight(p_refined, c)
+            c_out = c_tot - c_in
 
-            if c_in >= gamma * c_tot * (S_tot - c_tot):
+            if c_out >= gamma * c_tot * (S_tot - c_tot):
                 T.append(c)
 
         # TODO: choose random community C' from T
@@ -267,7 +275,9 @@ def merge_nodes_subset(G, p_refined, p_new, S: CommunityData, gamma=1, theta=1):
 
         # p_new may also need updating, since it groups p_refined into communities, and we may
         # have just gotten rid of one of the singletons in p_refined
-        move_node(G, p_refined, v, c)
+        if new_comm != curr_comm:
+            move_node(G, p_refined, v, c)
+            remaining_comms.remove(curr_comm)
 
 # returns refined partition
 def refine_partition(G, p):
@@ -285,11 +295,11 @@ def refine_partition(G, p):
 
     p_refined = construct_community_graph(G)
 
-    p_new = maintain_p(G, p, p_refined)
+    # p_new = maintain_p(G, p, p_refined)
 
     for c, c_data in p.nodes(data=True):
         comm_data = c_data["community_data"]
-        merge_nodes_subset(G, p_refined, p_new, comm_data)
+        merge_nodes_subset(G, p_refined, comm_data)
 
     return p_refined
 
@@ -471,6 +481,7 @@ def custom_leiden(G, gamma=1):
             break
 
         p_refined = refine_partition(G, p)
+        return
         # note -- p_refined is a slightly broken up version of the partitions found in leiden_move_nodes
         aggregate_graph(G, p_refined)
         G = p_refined
@@ -493,6 +504,11 @@ def main():
     G.add_node(2)
     G.add_node(3)
 
+    G.add_node(4)
+    G.add_node(5)
+    G.add_node(6)
+    G.add_node(7)
+
     G.add_edge(0, 1, weight=1)
     G.add_edge(1, 2, weight=1)
     G.add_edge(2, 3, weight=1)
@@ -500,6 +516,16 @@ def main():
 
     G.add_edge(0, 2, weight=1)
     G.add_edge(1, 3, weight=1)
+
+    G.add_edge(4, 5, weight=1)
+    G.add_edge(5, 6, weight=1)
+    G.add_edge(6, 7, weight=1)
+    G.add_edge(7, 4, weight=1)
+
+    G.add_edge(4, 6, weight=1)
+    G.add_edge(5, 7, weight=1)
+
+    G.add_edge(3, 4, weight=1)
 
     m = total_edge_weight(G)
     G.graph["m"] = m
