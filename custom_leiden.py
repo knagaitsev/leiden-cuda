@@ -284,13 +284,16 @@ def merge_nodes_subset(G, p_refined, S: CommunityData, gamma=0.05, theta=1):
             else:
                 probs.append(0)
 
-        print(probs)
-        continue
+        idxs = list(range(len(probs)))
 
-        # TODO: move node v to community C'
+        # move node v to community C'
 
-        rand_idx = 0
+        rand_idx = random.choices(idxs, weights=probs, k=1)[0]
         new_comm = T[rand_idx]
+
+        print(probs, rand_idx)
+
+        continue
         
         # TODO: need to make sure that this updates the edges and edge weights in p_refined, as
         # this gets used when calculating c_in and c_tot above
