@@ -4,8 +4,9 @@ import random
 import networkx as nx
 
 class CommunityData:
-    def __init__(self, G):
+    def __init__(self, G, community):
         self.G = G
+        self.community = community
         self.nodes = {}
 
         self.sum_weights_in = 0
@@ -136,7 +137,6 @@ def move_modularity_change(G, community_graph, node, next_comm):
     node_data = G.nodes[node]
     curr_comm = node_data["community"]
 
-    # TODO: could be more efficient by counting these both at once
     curr_k_i_in = vertex_total_in_edge_weight(G, node, curr_comm)
     next_k_i_in = vertex_total_in_edge_weight(G, node, next_comm)
     k_i = vertex_total_edge_weight(G, node)
@@ -184,48 +184,151 @@ def construct_community_graph(G: nx.Graph):
             c = community_graph.nodes[community]["community_data"]
             c.add_node(node)
         else:
-            c = CommunityData(G)
+            c = CommunityData(G, community)
             c.add_node(node)
 
             community_graph.add_node(community, community_data=c)
-
-        # edges = G.edges(node, data=True)
-        # for u, v, edge_data in edges:
-        #     weight = edge_data.get("weight", 1)
-            
-        #     data_u = G.nodes[u]
-        #     data_v = G.nodes[v]
-        #     comm_u = data_u["community"]
-        #     comm_v = data_v["community"]
-
-        #     if comm_u != comm_v and comm_u in community_graph and comm_v in community_graph:
-        #         if (comm_u, comm_v) in community_graph.edges:
-        #             edge_data = community_graph.get_edge_data(comm_u, comm_v)
-        #             edge_data["weight"] += weight
-        #         else:
-        #             community_graph.add_edge(comm_u, comm_v, weight=weight)
 
     assign_singleton_communities(community_graph)
 
     return community_graph
 
+def is_in_singleton_community(G, node):
+    edges = G.edges(node, data=True)
+
+    for u, v, edge_data in edges:
+        data_u = G.nodes[u]
+        data_v = G.nodes[v]
+        comm_u = data_u["community"]
+        comm_v = data_v["community"]
+
+        if comm_u == comm_v:
+            return False
+
+    return True
+
+# TODO: can we maintain a version of P which encompasses P_refined at the same time that we build P_refined?
+def merge_nodes_subset(G, p_refined, p_new, S: CommunityData, gamma=1, theta=1):
+    R = []
+
+    S_tot = 0
+    for node in S.nodes.keys():
+        S_tot += vertex_total_edge_weight(G, node)
+
+    for node in S.nodes.keys():
+        # consider only nodes that are well connected within subset S, put them in R
+        comm = G.nodes[node]["community"]
+
+        v_in = vertex_total_in_edge_weight(G, node, comm)
+        v_tot = vertex_total_edge_weight(G, node)
+
+        if v_in >= gamma * v_tot * (S_tot - v_tot):
+            R.append(node)
+
+    random.shuffle(R)
+
+    for v in R:
+        if not is_in_singleton_community(G, v):
+            continue
+        
+        # consider only well-connected communities
+        T = []
+        # this tells us what community in p_refined v belongs to
+        v_comm = G.nodes[v]["community"]
+        # this tells us what community in p_new p_refined belongs to
+        p_comm = p_refined.nodes[v_comm]["community"]
+        
+        p_comm_data = p_new.nodes[p_comm]["community_data"]
+
+        for c in p_comm_data.nodes:
+            c_in = vertex_total_in_edge_weight(p_refined, c, p_comm)
+            c_tot = vertex_total_edge_weight(p_refined, c)
+
+            if c_in >= gamma * c_tot * (S_tot - c_tot):
+                T.append(c)
+
+        # TODO: choose random community C' from T
+
+        probs = []
+        for c in T:
+            change = move_modularity_change(G, p_refined, v, c)
+            if change >= 0:
+                probs.append(exp((1/theta) * change))
+            else:
+                probs.append(0)
+
+        # TODO: move node v to community C'
+
+        rand_idx = 0
+        new_comm = T[rand_idx]
+        
+        # TODO: need to make sure that this updates the edges and edge weights in p_refined, as
+        # this gets used when calculating c_in and c_tot above
+
+        # p_new may also need updating, since it groups p_refined into communities, and we may
+        # have just gotten rid of one of the singletons in p_refined
+        move_node(G, p_refined, v, c)
+
 # returns refined partition
 def refine_partition(G, p):
     # TODO: should make a new graph that has G underlying it, without modifying G or p
-    p_refined = p
+    # p_refined = p
+    # p_refined.graph["parent"] = G
 
-    p_refined.graph["parent"] = G
+    i = 0
 
-    return p
+    # set singleton communities to each node
+    for node, node_data in G.nodes(data=True):
+        node_data["community"] = i
+        
+        i += 1
+
+    p_refined = construct_community_graph(G)
+
+    p_new = maintain_p(G, p, p_refined)
+
+    for c, c_data in p.nodes(data=True):
+        comm_data = c_data["community_data"]
+        merge_nodes_subset(G, p_refined, p_new, comm_data)
+
+    return p_refined
 
 # returns new community graph for p_refined, rather than the graph that
 # underlies both p and p_refined
 # this graph should be the equivalent of P, but now encapsulating P_refined rather than G
-def maintain_p(p, p_refined):
-    # TODO
-    p = construct_community_graph(p_refined)
-    p.graph["parent"] = p_refined
-    return p
+# p - the community graph for G
+# p_refined - another community graph for G (p_refined will always be the same size or bigger than p)
+def maintain_p(G, p, p_refined):
+    community_graph = nx.Graph()
+
+    community_graph.graph["parent"] = p_refined
+
+    for p_node, p_node_data in p.nodes(data=True):
+        comm_data = p_node_data["community_data"]
+
+        c = CommunityData(p_refined, p_node)
+
+        for node in comm_data.nodes:
+            node_data = G.nodes[node]
+
+            p_refined_comm = node_data["community"]
+
+            if not p_refined_comm in c.nodes:
+                c.add_node(p_refined_comm)
+
+            p_refined.nodes[p_refined_comm]["community"] = p_node
+
+        community_graph.add_node(p_node, community_data=c)
+    
+    for u, v, edge_data in p.edges(data=True):
+        weight = edge_data.get("weight", 1)
+
+        community_graph.add_edge(u, v, weight=weight)
+
+    # p = construct_community_graph(p_refined)
+    # p.graph["parent"] = p_refined
+
+    return community_graph
 
 def assign_singleton_communities(G):
     i = 0
@@ -235,6 +338,7 @@ def assign_singleton_communities(G):
 
         i += 1
 
+# TODO: do leiden move_nodes_fast
 def leiden_move_nodes(G, community_graph):
     while True:
         nodes = list(G.nodes)
@@ -372,7 +476,7 @@ def custom_leiden(G, gamma=1):
         G = p_refined
 
         # maintain partition P, this just makes it a partition of p_refined rather than the previous G
-        p = maintain_p(p, p_refined)
+        p = maintain_p(G, p, p_refined)
 
         num_iter += 1
 
