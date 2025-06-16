@@ -2,6 +2,8 @@ import time
 import random
 # import community as community_louvain
 import networkx as nx
+import copy
+import math
 
 class CommunityData:
     def __init__(self, G, community):
@@ -189,6 +191,22 @@ def construct_community_graph(G: nx.Graph):
 
             community_graph.add_node(community, community_data=c)
 
+        # edges = G.edges(node, data=True)
+        # for u, v, edge_data in edges:
+        #     weight = edge_data.get("weight", 1)
+            
+        #     data_u = G.nodes[u]
+        #     data_v = G.nodes[v]
+        #     comm_u = data_u["community"]
+        #     comm_v = data_v["community"]
+
+        #     if comm_u != comm_v and comm_u in community_graph and comm_v in community_graph:
+        #         if (comm_u, comm_v) in community_graph.edges:
+        #             edge_data = community_graph.get_edge_data(comm_u, comm_v)
+        #             edge_data["weight"] += weight
+        #         else:
+        #             community_graph.add_edge(comm_u, comm_v, weight=weight)
+
     assign_singleton_communities(community_graph)
 
     return community_graph
@@ -220,7 +238,7 @@ def merge_nodes_subset(G, p_refined, S: CommunityData, gamma=0.05, theta=1):
     for node in S.nodes.keys():
         # consider only nodes that are well connected within subset S, put them in R
         comm = G.nodes[node]["community"]
-        remaining_comms.insert(comm)
+        remaining_comms.add(comm)
 
         # these have nothing to do with communities since all nodes will have been placed in singleton communities
         # directly prior to the call of this function -- the only thing we have to be concerned about is self-edges, which should
@@ -243,11 +261,12 @@ def merge_nodes_subset(G, p_refined, S: CommunityData, gamma=0.05, theta=1):
         # this tells us what community in p_refined v belongs to
         curr_comm = G.nodes[v]["community"]
         # this tells us what community in p_new p_refined belongs to
-        p_refined_comm = p_refined.nodes[curr_comm]["community"]
+        # p_refined_comm = p_refined.nodes[curr_comm]["community"]
         
         # p_comm_data = p_new.nodes[p_comm]["community_data"]
 
         for c in remaining_comms:
+            p_refined_comm = p_refined.nodes[c]["community"]
             c_in = vertex_total_in_edge_weight(p_refined, c, p_refined_comm)
             c_tot = vertex_total_edge_weight(p_refined, c)
             c_out = c_tot - c_in
@@ -255,15 +274,18 @@ def merge_nodes_subset(G, p_refined, S: CommunityData, gamma=0.05, theta=1):
             if c_out >= gamma * c_tot * (S_tot - c_tot):
                 T.append(c)
 
-        # TODO: choose random community C' from T
+        # choose random community C' from T
 
         probs = []
         for c in T:
             change = move_modularity_change(G, p_refined, v, c)
             if change >= 0:
-                probs.append(exp((1/theta) * change))
+                probs.append(math.exp((1/theta) * change))
             else:
                 probs.append(0)
+
+        print(probs)
+        continue
 
         # TODO: move node v to community C'
 
@@ -285,15 +307,14 @@ def refine_partition(G, p):
     # p_refined = p
     # p_refined.graph["parent"] = G
 
-    i = 0
-
     # set singleton communities to each node
+    i = 0
     for node, node_data in G.nodes(data=True):
         node_data["community"] = i
-        
         i += 1
 
     p_refined = construct_community_graph(G)
+    aggregate_graph(G, p_refined)
 
     # p_new = maintain_p(G, p, p_refined)
 
@@ -405,6 +426,9 @@ def all_communities_one_node(community_graph):
 def aggregate_graph(G, community_graph):
     # for comm, comm_node_data in community_graph.nodes(data=True):
     #     comm_data = comm_node_data["community_data"]
+
+    # make sure to clear community_graph edges first
+    community_graph.remove_edges_from(list(community_graph.edges))
 
     edges = G.edges(data=True)
     for u, v, edge_data in edges:
