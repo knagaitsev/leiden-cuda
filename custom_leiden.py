@@ -316,6 +316,7 @@ def refine_partition(G, p):
         i += 1
 
     p_refined = construct_community_graph(G)
+    p_refined.graph["parent"] = G
     aggregate_graph(G, p_refined)
 
     # p_new = maintain_p(G, p, p_refined)
@@ -326,6 +327,7 @@ def refine_partition(G, p):
 
     return p_refined
 
+# important: this must be called before we set G = p_refined, but after we do refining (so G has new community values)
 # returns new community graph for p_refined, rather than the graph that
 # underlies both p and p_refined
 # this graph should be the equivalent of P, but now encapsulating P_refined rather than G
@@ -527,13 +529,16 @@ def custom_leiden(G, gamma=1):
             break
 
         p_refined = refine_partition(G, p)
-        return
-        # note -- p_refined is a slightly broken up version of the partitions found in leiden_move_nodes
-        aggregate_graph(G, p_refined)
-        G = p_refined
-
+        
         # maintain partition P, this just makes it a partition of p_refined rather than the previous G
         p = maintain_p(G, p, p_refined)
+
+        print(len(p))
+
+        G = p_refined
+
+        if num_iter == 3:
+            return
 
         num_iter += 1
 
