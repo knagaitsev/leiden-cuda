@@ -226,7 +226,7 @@ def is_in_singleton_community(G, node):
     return True
 
 # TODO: can we maintain a version of P which encompasses P_refined at the same time that we build P_refined?
-def merge_nodes_subset(G, p_refined, S: CommunityData, gamma=0.05, theta=1):
+def merge_nodes_subset(G, p_refined, S: CommunityData, gamma=0.01, theta=1):
     R = []
 
     remaining_comms = set()
@@ -284,16 +284,14 @@ def merge_nodes_subset(G, p_refined, S: CommunityData, gamma=0.05, theta=1):
             else:
                 probs.append(0)
 
+        print(probs)
+
         idxs = list(range(len(probs)))
 
         # move node v to community C'
 
         rand_idx = random.choices(idxs, weights=probs, k=1)[0]
         new_comm = T[rand_idx]
-
-        print(probs, rand_idx)
-
-        continue
         
         # TODO: need to make sure that this updates the edges and edge weights in p_refined, as
         # this gets used when calculating c_in and c_tot above
@@ -301,8 +299,9 @@ def merge_nodes_subset(G, p_refined, S: CommunityData, gamma=0.05, theta=1):
         # p_new may also need updating, since it groups p_refined into communities, and we may
         # have just gotten rid of one of the singletons in p_refined
         if new_comm != curr_comm:
-            move_node(G, p_refined, v, c)
+            move_node(G, p_refined, v, new_comm)
             remaining_comms.remove(curr_comm)
+            add_community_graph_edges_singleton_move(G, p_refined, v)
 
 # returns refined partition
 def refine_partition(G, p):
@@ -444,6 +443,26 @@ def aggregate_graph(G, community_graph):
 
         # add edge weight to the community_graph, simply increasing the weight if the edge already exists
         # Important: this should include adding self-edges for the community to itself
+
+        if community_graph.has_edge(comm_u, comm_v):
+            edge_data = community_graph[comm_u][comm_v]
+            if "weight" in edge_data:
+                edge_data["weight"] += weight
+            else:
+                edge_data["weight"] = weight
+        else:
+            community_graph.add_edge(comm_u, comm_v, weight=weight)
+
+# this can only be used if a node that was previously in a singleton community gets moved to a new community
+def add_community_graph_edges_singleton_move(G, community_graph, node):
+    edges = G.edges(node, data=True)
+    for u, v, edge_data in edges:
+        weight = edge_data.get("weight", 1)
+
+        data_u = G.nodes[u]
+        data_v = G.nodes[v]
+        comm_u = data_u["community"]
+        comm_v = data_v["community"]
 
         if community_graph.has_edge(comm_u, comm_v):
             edge_data = community_graph[comm_u][comm_v]
