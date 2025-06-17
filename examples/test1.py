@@ -13,6 +13,7 @@ if str(parent_dir) not in sys.path:
     sys.path.insert(0, str(parent_dir))
 
 from custom_louvain import custom_louvain
+from custom_leiden import custom_leiden
 
 curr_path = Path(os.path.realpath(os.path.dirname(__file__)))
 
@@ -20,11 +21,11 @@ curr_path = Path(os.path.realpath(os.path.dirname(__file__)))
 # G = nx.karate_club_graph()
 # G = nx.read_edgelist("../data/flickr-groupmemberships/out.flickr-groupmemberships", comments="%")
 
-# data_path = Path.resolve(curr_path / "../validation/clique_ring.txt")
-# G = nx.read_edgelist(data_path, nodetype=int)
+data_path = Path.resolve(curr_path / "../validation/clique_ring.txt")
+G = nx.read_edgelist(data_path, nodetype=int)
 
-data_path = Path.resolve(curr_path / "../validation/clique_ring_weighted.txt")
-G = nx.read_weighted_edgelist(data_path, nodetype=int)
+# data_path = Path.resolve(curr_path / "../validation/clique_ring_weighted.txt")
+# G = nx.read_weighted_edgelist(data_path, nodetype=int)
 print(G)
 
 has_self_loops = any(G.has_edge(n, n) for n in G.nodes())
@@ -36,7 +37,8 @@ start = time.time()
 
 # communities = leiden_communities(G, seed=42, resolution=1, backend="cugraph")
 # communities = louvain_communities(G, seed=42, resolution=1, backend="cugraph")
-communities = custom_louvain(G)
+# communities = custom_louvain(G)
+communities = custom_leiden(G)
 
 # communities = louvain_communities(G, seed=42, resolution=1, backend="parallel")
 end = time.time()
