@@ -39,7 +39,7 @@ start = time.time()
 # communities = leiden_communities(G, seed=42, resolution=1, backend="cugraph")
 # communities = louvain_communities(G, seed=42, resolution=1, backend="cugraph")
 # communities = custom_louvain(G)
-communities = custom_leiden(G, gamma=0.0001)
+communities = custom_leiden(G, gamma=0.01)
 
 # communities = louvain_communities(G, seed=42, resolution=1, backend="parallel")
 end = time.time()

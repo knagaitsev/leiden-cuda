@@ -106,10 +106,10 @@ def vertex_candidate_in_edge_weight(G, node, remaining_comms: set):
         comm_u = data_u["community"]
         comm_v = data_v["community"]
         
-        # currently self-edges are allowed here
-        if node == u and node == v:
-            tot += weight
-            continue
+        # TODO: self-edges should be included here?
+        # if node == u and node == v:
+        #     tot += weight
+        #     continue
 
         # make sure we are not comparing the node's community against it's own community,
         # hence the !=
@@ -125,10 +125,10 @@ def comm_candidate_in_edge_weight(G, node, remaining_comms: set):
     for u, v, data in edges:
         weight = data.get("weight", 1)
         
-        # currently self-edges are allowed here
-        if node == u and node == v:
-            tot += weight
-            continue
+        # TODO: self-edges should be included here?
+        # if node == u and node == v:
+        #     tot += weight
+        #     continue
 
         # make sure we are not comparing the node's community against it's own community,
         # hence the !=
@@ -312,27 +312,31 @@ def merge_nodes_subset(G, p_refined, S: CommunityData, gamma, theta=1):
 
     remaining_comms = set()
 
-    S_tot = 0
     for node in S.nodes:
-        S_tot += vertex_total_edge_weight(G, node)
-
-        # consider only nodes that are well connected within subset S, put them in R
         comm = G.nodes[node]["community"]
         remaining_comms.add(comm)
 
+    S_tot = 0
+    for node in S.nodes:
+        # S_tot += vertex_total_edge_weight(G, node)
+
+        S_tot += vertex_candidate_in_edge_weight(G, node, remaining_comms)
+
+    # consider only nodes that are well connected within subset S, put them in R
     for node in S.nodes:
         # these have nothing to do with communities since all nodes will have been placed in singleton communities
         # directly prior to the call of this function -- the only thing we have to be concerned about is self-edges, which should
         # be removed for v_out
 
         # v_in = vertex_total_in_edge_weight(G, node, comm)
-        v_tot = vertex_total_edge_weight(G, node)
         # v_out = v_tot - v_in
         # TODO: should we allow self-edges here? The paper description does not allow self-edges, but it seems
         # they may make sense
         v_in = vertex_candidate_in_edge_weight(G, node, remaining_comms)
+        # v_tot = vertex_total_edge_weight(G, node)
+        v_tot = v_in
 
-        print(v_in, v_tot, S_tot)
+        # print(v_in, v_tot, S_tot)
 
         if v_in >= gamma * v_tot * (S_tot - v_tot):
             R.append(node)
@@ -359,12 +363,13 @@ def merge_nodes_subset(G, p_refined, S: CommunityData, gamma, theta=1):
             # later, they should be joined into the same community
             p_refined_comm = p_refined.nodes[c]["community"]
             # c_in = vertex_total_in_edge_weight(p_refined, c, p_refined_comm)
-            c_tot = vertex_total_edge_weight(p_refined, c)
             # c_out = c_tot - c_in
 
             # TODO: should we allow self-edges here? The paper description does not allow self-edges, but it seems
             # they may make sense
             c_in = comm_candidate_in_edge_weight(p_refined, c, remaining_comms)
+            # c_tot = vertex_total_edge_weight(p_refined, c)
+            c_tot = c_in
 
             if c_in >= gamma * c_tot * (S_tot - c_tot):
                 T.append(c)
@@ -380,7 +385,7 @@ def merge_nodes_subset(G, p_refined, S: CommunityData, gamma, theta=1):
             else:
                 probs.append(0)
 
-        print(probs)
+        # print(probs)
 
         idxs = list(range(len(probs)))
 
@@ -421,8 +426,6 @@ def refine_partition(G, p, gamma):
         comm_data = c_data["community_data"]
         print(f"Refining a subset of size: {len(comm_data.nodes)}")
         merge_nodes_subset(G, p_refined, comm_data, gamma)
-
-    print(f"Refined edges: {len(p_refined.edges())}")
 
     return p_refined
 
@@ -477,7 +480,10 @@ def move_nodes_fast(G, community_graph, gamma):
     q = queue.Queue()
     in_q = set()
 
-    for node in G.nodes():
+    nodes = list(G.nodes)
+    random.shuffle(nodes)
+
+    for node in nodes:
         q.put(node)
         in_q.add(node)
     
@@ -635,11 +641,11 @@ def custom_leiden(G, gamma=1):
     p.graph["parent"] = G
 
     while True:
-        print(f"Running Leiden iteration: {num_iter}")
         m = total_edge_weight(G)
         G.graph["m"] = m
 
         move_nodes_fast(G, p, gamma)
+        print(f"Running Leiden iteration: {num_iter}, number of communities after move_nodes_fast: {len(p)}")
         if all_communities_one_node(p):
             break
 
@@ -660,6 +666,9 @@ def custom_leiden(G, gamma=1):
         G = p_refined
 
         num_iter += 1
+
+        if num_iter > 10:
+            return
 
     # since all communities were found to have one node, we can safely propagate from G, rather
     # than from community_graph
