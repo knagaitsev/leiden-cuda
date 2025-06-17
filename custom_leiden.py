@@ -4,6 +4,7 @@ import random
 import networkx as nx
 import copy
 import math
+import queue
 
 class CommunityData:
     def __init__(self, G, community):
@@ -387,8 +388,7 @@ def assign_singleton_communities(G):
 
         i += 1
 
-# TODO: do leiden move_nodes_fast
-def leiden_move_nodes(G, community_graph):
+def louvain_move_nodes(G, community_graph):
     while True:
         nodes = list(G.nodes)
         random.shuffle(nodes)
@@ -430,6 +430,64 @@ def leiden_move_nodes(G, community_graph):
 
         if num_moves == 0:
             break
+
+# do leiden move_nodes_fast
+def move_nodes_fast(G, community_graph):
+    q = queue.Queue()
+    in_q = set()
+
+    for node in G.nodes():
+        q.put(node)
+        in_q.add(node)
+    
+    while True:
+        if q.empty():
+            return
+        
+        node = q.get()
+        in_q.remove(node)
+
+        node_data = G.nodes[node]
+        curr_comm = node_data["community"]
+
+        best_comm = curr_comm
+        best_delta = 0
+        edges = G.edges(node, data=True)
+        for u, v, edge_data in edges:
+            data_u = G.nodes[u]
+            data_v = G.nodes[v]
+            comm_u = data_u["community"]
+            comm_v = data_v["community"]
+
+            candidate_comm = comm_u
+            if comm_u == curr_comm:
+                candidate_comm = comm_v
+            
+            if candidate_comm == curr_comm or candidate_comm == best_comm:
+                continue
+
+            delta = move_modularity_change(G, community_graph, node, candidate_comm)
+
+            if delta > best_delta:
+                best_delta = delta
+                best_comm = candidate_comm
+    
+        if best_comm != curr_comm:
+            move_node(G, community_graph, node, best_comm)
+
+            for u, v in G.edges(node):
+                data_u = G.nodes[u]
+                data_v = G.nodes[v]
+                comm_u = data_u["community"]
+                comm_v = data_v["community"]
+
+                if comm_u != best_comm and not u in in_q:
+                    q.put(u)
+                    in_q.add(u)
+
+                if comm_v != best_comm and not v in in_q:
+                    q.put(v)
+                    in_q.add(v)
 
 def all_communities_one_node(community_graph):
     for _, node_data in community_graph.nodes(data=True):
@@ -538,7 +596,7 @@ def custom_leiden(G, gamma=1):
         G.graph["m"] = m
         G.graph["gamma"] = gamma
 
-        leiden_move_nodes(G, p)
+        move_nodes_fast(G, p)
         if all_communities_one_node(p):
             break
 
