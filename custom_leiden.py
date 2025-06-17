@@ -10,46 +10,43 @@ class CommunityData:
     def __init__(self, G, community):
         self.G = G
         self.community = community
-        self.nodes = {}
+        self.nodes = set()
 
         self.sum_weights_in = 0
         self.sum_weights_tot = 0
 
     def add_node(self, node):
-        edges = self.G.edges(node, data=True)
-        for u, v, data in edges:
-            weight = data.get("weight", 1)
+        # edges = self.G.edges(node, data=True)
+        # for u, v, data in edges:
+        #     weight = data.get("weight", 1)
 
-            # IMPORTANT: all the sums here are meant to be double counting
+        #     # IMPORTANT: all the sums here are meant to be double counting
 
-            self.sum_weights_tot += weight
+        #     self.sum_weights_tot += weight
 
-            if u in self.nodes:
-                self.sum_weights_in += 2 * weight
-            elif v in self.nodes:
-                self.sum_weights_in += 2 * weight
-            elif u == v:
-                # self-edge gets added here too
-                self.sum_weights_in += 2 * weight
+        #     if u in self.nodes:
+        #         self.sum_weights_in += 2 * weight
+        #     elif v in self.nodes:
+        #         self.sum_weights_in += 2 * weight
+        #     elif u == v:
+        #         # self-edge gets added here too
+        #         self.sum_weights_in += 2 * weight
 
-        self.nodes[node] = True
+        self.nodes.add(node)
 
     def remove_node(self, node):
-        del self.nodes[node]
+        self.nodes.remove(node)
 
-        edges = self.G.edges(node, data=True)
-        for u, v, data in edges:
-            weight = data.get("weight", 1)
+        # edges = self.G.edges(node, data=True)
+        # for u, v, data in edges:
+        #     weight = data.get("weight", 1)
 
-            self.sum_weights_tot -= weight
+        #     self.sum_weights_tot -= weight
 
-            if u in self.nodes:
-                self.sum_weights_in -= 2 * weight
-            elif v in self.nodes:
-                self.sum_weights_in -= 2 * weight
-
-    def nodes(self):
-        return self.nodes.keys()
+        #     if u in self.nodes:
+        #         self.sum_weights_in -= 2 * weight
+        #     elif v in self.nodes:
+        #         self.sum_weights_in -= 2 * weight
 
     def __len__(self):
         return len(self.nodes)
@@ -73,12 +70,17 @@ def vertex_total_in_edge_weight(G, node, community):
         comm_u = data_u["community"]
         comm_v = data_v["community"]
         
+        # IMPORTANT: this is here because this function should only be used when considering the addition of a node
+        # to a community, so we always consider the node self-edge to be a part of that community during the calculation,
+        # regardless of the actual current membership of the node
+        if node == u and node == v:
+            # self-edges should be included here too
+            tot += weight
+            continue
+
         # make sure we are not comparing the node's community against it's own community,
         # hence the !=
         if (node != u and community == comm_u) or (node != v and community == comm_v):
-            tot += weight
-        elif node == u and node == v:
-            # self-edges should be included here too
             tot += weight
 
     return tot
@@ -162,6 +164,35 @@ def move_modularity_change(G, community_graph, node, next_comm):
 
     return delta_Q
 
+def cpm(G, gamma):
+    tot = 0
+
+    edges = G.edges(data=True)
+    for u, v, edge_data in edges:
+        weight = edge_data.get("weight", 1)
+
+        data_u = G.nodes[u]
+        data_v = G.nodes[v]
+        comm_u = data_u["community"]
+        comm_v = data_v["community"]
+
+        if comm_u == comm_v:
+            tot += weight - gamma
+
+    return tot
+
+def cpm_change(G, community_graph, node, next_comm, gamma):
+    curr_comm = G.nodes[node]["community"]
+    k_vc_new = vertex_total_in_edge_weight(G, node, next_comm)
+    k_vc_old = vertex_total_in_edge_weight(G, node, curr_comm)
+
+    comm_data_old = community_graph.nodes[curr_comm]["community_data"]
+    comm_data_new = community_graph.nodes[next_comm]["community_data"]
+
+    delta_H = (k_vc_new - gamma * len(comm_data_new)) - (k_vc_old - gamma * (len(comm_data_old) - 1))
+
+    return delta_H
+
 def move_node(G: nx.Graph, community_graph: nx.Graph, node, community):
     node_data = G.nodes[node]
     prev_community = node_data["community"]
@@ -230,7 +261,7 @@ def is_in_singleton_community(G, node):
     return True
 
 # TODO: can we maintain a version of P which encompasses P_refined at the same time that we build P_refined?
-def merge_nodes_subset(G, p_refined, S: CommunityData, gamma=0.0001, theta=1):
+def merge_nodes_subset(G, p_refined, S: CommunityData, gamma, theta=1):
     # return early if a subset has only one node
     if len(S.nodes) == 1:
         return
@@ -240,10 +271,10 @@ def merge_nodes_subset(G, p_refined, S: CommunityData, gamma=0.0001, theta=1):
     remaining_comms = set()
 
     S_tot = 0
-    for node in S.nodes.keys():
+    for node in S.nodes:
         S_tot += vertex_total_edge_weight(G, node)
 
-    for node in S.nodes.keys():
+    for node in S.nodes:
         # consider only nodes that are well connected within subset S, put them in R
         comm = G.nodes[node]["community"]
         remaining_comms.add(comm)
@@ -290,7 +321,8 @@ def merge_nodes_subset(G, p_refined, S: CommunityData, gamma=0.0001, theta=1):
 
         probs = []
         for c in T:
-            change = move_modularity_change(G, p_refined, v, c)
+            # change = move_modularity_change(G, p_refined, v, c)
+            change = cpm_change(G, p_refined, v, c, gamma)
             if change >= 0:
                 probs.append(math.exp((1/theta) * change))
             else:
@@ -316,7 +348,7 @@ def merge_nodes_subset(G, p_refined, S: CommunityData, gamma=0.0001, theta=1):
             add_community_graph_edges_singleton_move(G, p_refined, v)
 
 # returns refined partition
-def refine_partition(G, p):
+def refine_partition(G, p, gamma):
     # TODO: should make a new graph that has G underlying it, without modifying G or p
     # p_refined = p
     # p_refined.graph["parent"] = G
@@ -336,7 +368,7 @@ def refine_partition(G, p):
     for c, c_data in p.nodes(data=True):
         comm_data = c_data["community_data"]
         print(len(comm_data.nodes))
-        merge_nodes_subset(G, p_refined, comm_data)
+        merge_nodes_subset(G, p_refined, comm_data, gamma)
 
     print(f"Refined edges: {len(p_refined.edges())}")
 
@@ -388,51 +420,8 @@ def assign_singleton_communities(G):
 
         i += 1
 
-def louvain_move_nodes(G, community_graph):
-    while True:
-        nodes = list(G.nodes)
-        random.shuffle(nodes)
-
-        num_moves = 0
-
-        for node in nodes:
-            node_data = G.nodes[node]
-            curr_comm = node_data["community"]
-
-            best_comm = curr_comm
-            best_delta = 0
-            edges = G.edges(node, data=True)
-            for u, v, edge_data in edges:
-                data_u = G.nodes[u]
-                data_v = G.nodes[v]
-                comm_u = data_u["community"]
-                comm_v = data_v["community"]
-
-                candidate_comm = comm_u
-                if comm_u == curr_comm:
-                    candidate_comm = comm_v
-                
-                if candidate_comm == curr_comm or candidate_comm == best_comm:
-                    continue
-
-                delta = move_modularity_change(G, community_graph, node, candidate_comm)
-
-                if delta > best_delta:
-                    best_delta = delta
-                    best_comm = candidate_comm
-        
-            if best_comm != curr_comm:
-                # print(f"Delta: {best_delta}")
-                # print(f"MOVED {node} {best_comm}")
-                move_node(G, community_graph, node, best_comm)
-
-                num_moves += 1
-
-        if num_moves == 0:
-            break
-
 # do leiden move_nodes_fast
-def move_nodes_fast(G, community_graph):
+def move_nodes_fast(G, community_graph, gamma):
     q = queue.Queue()
     in_q = set()
 
@@ -466,13 +455,16 @@ def move_nodes_fast(G, community_graph):
             if candidate_comm == curr_comm or candidate_comm == best_comm:
                 continue
 
-            delta = move_modularity_change(G, community_graph, node, candidate_comm)
+            # delta = move_modularity_change(G, community_graph, node, candidate_comm)
+            delta = cpm_change(G, community_graph, node, candidate_comm, gamma)
 
             if delta > best_delta:
                 best_delta = delta
                 best_comm = candidate_comm
     
         if best_comm != curr_comm:
+            # print(f"Best Delta: {best_delta}")
+
             move_node(G, community_graph, node, best_comm)
 
             for u, v in G.edges(node):
@@ -558,7 +550,7 @@ def propagate_partitions(G):
         curr_comm = comm_node_data["community"]
         
         comm_data = comm_node_data["community_data"]
-        for node in comm_data.nodes.keys():
+        for node in comm_data.nodes:
             node_data = parent.nodes[node]
             node_data["community"] = curr_comm
     
@@ -594,9 +586,8 @@ def custom_leiden(G, gamma=1):
         print(f"Running Leiden iteration: {num_iter}")
         m = total_edge_weight(G)
         G.graph["m"] = m
-        G.graph["gamma"] = gamma
 
-        move_nodes_fast(G, p)
+        move_nodes_fast(G, p, gamma)
         if all_communities_one_node(p):
             break
 
@@ -608,7 +599,7 @@ def custom_leiden(G, gamma=1):
         #     comm = node_data["community"]
         #     print(f"Node community: {comm}")
 
-        p_refined = refine_partition(G, p)
+        p_refined = refine_partition(G, p, gamma)
         
         # maintain partition P, this just makes it a partition of p_refined rather than the previous G
         # IMPORTANT: this must come before G = p_refined
@@ -658,6 +649,23 @@ def main():
     G.graph["m"] = m
     print(f"Total edge weight: {m}")
 
+    assign_singleton_communities(G)
+    community_graph = construct_community_graph(G)
+
+    gamma = 0.1
+
+    print(f"Start CPM: {cpm(G, gamma)}")
+
+    # delta = cpm_change(G, community_graph, 0, 1, gamma)
+
+    # print(f"Delta: {delta}")
+
+    # move_node(G, community_graph, 0, 1)
+
+    move_nodes_fast(G, community_graph, gamma)
+
+    print(f"End CPM: {cpm(G, gamma)}")
+
     # G = nx.read_edgelist("../validation/clique_ring.txt", nodetype=int)
 
     # community_graph = nx.Graph()
@@ -674,7 +682,7 @@ def main():
     # print(f"Modularity: {modularity(G)}")
     # louvain_move_nodes(G, community_graph)
     # print(f"Modularity: {modularity(G)}")
-    print(custom_leiden(G, gamma=0.7))
+    # print(custom_leiden(G, gamma=0.1))
 
 if __name__ == "__main__":
     main()
