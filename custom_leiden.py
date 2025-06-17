@@ -322,6 +322,8 @@ def merge_nodes_subset(G, p_refined, S: CommunityData, gamma, theta=1):
 
         S_tot += vertex_candidate_in_edge_weight(G, node, remaining_comms)
 
+    print(S_tot)
+
     # consider only nodes that are well connected within subset S, put them in R
     for node in S.nodes:
         # these have nothing to do with communities since all nodes will have been placed in singleton communities
@@ -335,8 +337,6 @@ def merge_nodes_subset(G, p_refined, S: CommunityData, gamma, theta=1):
         v_in = vertex_candidate_in_edge_weight(G, node, remaining_comms)
         # v_tot = vertex_total_edge_weight(G, node)
         v_tot = v_in
-
-        # print(v_in, v_tot, S_tot)
 
         if v_in >= gamma * v_tot * (S_tot - v_tot):
             R.append(node)
@@ -597,7 +597,7 @@ def add_community_graph_edges_singleton_move(G, community_graph, node):
         else:
             community_graph.add_edge(comm_u, comm_v, weight=weight)
 
-def propagate_partitions(G):
+def propagate_partitions(G, depth=0):
     # we are at the root graph, so nothing to propagate
     if "parent" not in G.graph:
         return
@@ -608,12 +608,14 @@ def propagate_partitions(G):
         curr_comm = comm_node_data["community"]
         
         comm_data = comm_node_data["community_data"]
+        # print(f"PROP: {depth}, comm: {curr_comm}, node count: {len(comm_data.nodes)}")
+
         for node in comm_data.nodes:
             node_data = parent.nodes[node]
             node_data["community"] = curr_comm
     
     # tail recursion propagating partitions
-    propagate_partitions(parent)
+    propagate_partitions(parent, depth=depth+1)
 
 def get_final_communities(G):
     comms = {}
@@ -646,6 +648,10 @@ def custom_leiden(G, gamma=1):
 
         move_nodes_fast(G, p, gamma)
         print(f"Running Leiden iteration: {num_iter}, number of communities after move_nodes_fast: {len(p)}")
+        for node, node_data in p.nodes(data=True):
+            comm_data = node_data["community_data"]
+            # print(f"comm_data len: {len(comm_data)}")
+
         if all_communities_one_node(p):
             break
 
@@ -667,8 +673,8 @@ def custom_leiden(G, gamma=1):
 
         num_iter += 1
 
-        if num_iter > 10:
-            return
+        # if num_iter > 10:
+        #     return
 
     # since all communities were found to have one node, we can safely propagate from G, rather
     # than from community_graph
