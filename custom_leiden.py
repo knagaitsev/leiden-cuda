@@ -220,6 +220,9 @@ def is_in_singleton_community(G, node):
         comm_u = data_u["community"]
         comm_v = data_v["community"]
 
+        if u == v:
+            continue
+
         if comm_u == comm_v:
             return False
 
@@ -227,6 +230,10 @@ def is_in_singleton_community(G, node):
 
 # TODO: can we maintain a version of P which encompasses P_refined at the same time that we build P_refined?
 def merge_nodes_subset(G, p_refined, S: CommunityData, gamma=0.01, theta=1):
+    # return early if a subset has only one node
+    if len(S.nodes) == 1:
+        return
+
     R = []
 
     remaining_comms = set()
@@ -252,9 +259,13 @@ def merge_nodes_subset(G, p_refined, S: CommunityData, gamma=0.01, theta=1):
 
     random.shuffle(R)
 
+    print(f"R: {R}")
+
     for v in R:
         if not is_in_singleton_community(G, v):
             continue
+
+        print("HERE")
 
         # consider only well-connected communities
         T = []
@@ -266,6 +277,8 @@ def merge_nodes_subset(G, p_refined, S: CommunityData, gamma=0.01, theta=1):
         # p_comm_data = p_new.nodes[p_comm]["community_data"]
 
         for c in remaining_comms:
+            # IMPORTANT: it is expected at this point that every p_refined node is in a single community
+            # later, they should be joined into the same community
             p_refined_comm = p_refined.nodes[c]["community"]
             c_in = vertex_total_in_edge_weight(p_refined, c, p_refined_comm)
             c_tot = vertex_total_edge_weight(p_refined, c)
@@ -324,6 +337,8 @@ def refine_partition(G, p):
     for c, c_data in p.nodes(data=True):
         comm_data = c_data["community_data"]
         merge_nodes_subset(G, p_refined, comm_data)
+
+    print(f"Refined edges: {len(p_refined.edges())}")
 
     return p_refined
 
@@ -528,16 +543,23 @@ def custom_leiden(G, gamma=1):
         if all_communities_one_node(p):
             break
 
+        for node, node_data in p.nodes(data=True):
+            comm_data = node_data["community_data"]
+            print(f"Community: {node}, Nodes len: {len(comm_data.nodes)}")
+
+        for node, node_data in G.nodes(data=True):
+            comm = node_data["community"]
+            print(f"Node community: {comm}")
+
         p_refined = refine_partition(G, p)
         
         # maintain partition P, this just makes it a partition of p_refined rather than the previous G
+        # IMPORTANT: this must come before G = p_refined
         p = maintain_p(G, p, p_refined)
-
-        print(len(p))
 
         G = p_refined
 
-        if num_iter == 3:
+        if num_iter == 10:
             return
 
         num_iter += 1
