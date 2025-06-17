@@ -229,7 +229,7 @@ def is_in_singleton_community(G, node):
     return True
 
 # TODO: can we maintain a version of P which encompasses P_refined at the same time that we build P_refined?
-def merge_nodes_subset(G, p_refined, S: CommunityData, gamma=0.01, theta=1):
+def merge_nodes_subset(G, p_refined, S: CommunityData, gamma=0.0001, theta=1):
     # return early if a subset has only one node
     if len(S.nodes) == 1:
         return
@@ -264,8 +264,6 @@ def merge_nodes_subset(G, p_refined, S: CommunityData, gamma=0.01, theta=1):
     for v in R:
         if not is_in_singleton_community(G, v):
             continue
-
-        print("HERE")
 
         # consider only well-connected communities
         T = []
@@ -336,6 +334,7 @@ def refine_partition(G, p):
 
     for c, c_data in p.nodes(data=True):
         comm_data = c_data["community_data"]
+        print(len(comm_data.nodes))
         merge_nodes_subset(G, p_refined, comm_data)
 
     print(f"Refined edges: {len(p_refined.edges())}")
@@ -543,13 +542,13 @@ def custom_leiden(G, gamma=1):
         if all_communities_one_node(p):
             break
 
-        for node, node_data in p.nodes(data=True):
-            comm_data = node_data["community_data"]
-            print(f"Community: {node}, Nodes len: {len(comm_data.nodes)}")
+        # for node, node_data in p.nodes(data=True):
+        #     comm_data = node_data["community_data"]
+        #     print(f"Community: {node}, Nodes len: {len(comm_data.nodes)}")
 
-        for node, node_data in G.nodes(data=True):
-            comm = node_data["community"]
-            print(f"Node community: {comm}")
+        # for node, node_data in G.nodes(data=True):
+        #     comm = node_data["community"]
+        #     print(f"Node community: {comm}")
 
         p_refined = refine_partition(G, p)
         
@@ -558,9 +557,6 @@ def custom_leiden(G, gamma=1):
         p = maintain_p(G, p, p_refined)
 
         G = p_refined
-
-        if num_iter == 10:
-            return
 
         num_iter += 1
 

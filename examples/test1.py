@@ -19,10 +19,11 @@ curr_path = Path(os.path.realpath(os.path.dirname(__file__)))
 
 # Create a graph
 # G = nx.karate_club_graph()
-# G = nx.read_edgelist("../data/flickr-groupmemberships/out.flickr-groupmemberships", comments="%")
+# G = nx.read_edgelist(curr_path / "../data/flickr-groupmemberships/out.flickr-groupmemberships", comments="%")
+G = nx.read_edgelist(curr_path / "../data/arenas-jazz/out.arenas-jazz", comments="%")
 
-data_path = Path.resolve(curr_path / "../validation/clique_ring.txt")
-G = nx.read_edgelist(data_path, nodetype=int)
+# data_path = Path.resolve(curr_path / "../validation/clique_ring.txt")
+# G = nx.read_edgelist(data_path, nodetype=int)
 
 # data_path = Path.resolve(curr_path / "../validation/clique_ring_weighted.txt")
 # G = nx.read_weighted_edgelist(data_path, nodetype=int)
@@ -67,4 +68,4 @@ nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
 
 figs_dir = Path.resolve(curr_path / "../figs")
 
-plt.savefig(figs_dir / "graph2.pdf")
+plt.savefig(figs_dir / "graph_jazz_leiden.pdf")
