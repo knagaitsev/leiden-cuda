@@ -39,7 +39,7 @@ start = time.time()
 # communities = leiden_communities(G, seed=42, resolution=1, backend="cugraph")
 # communities = louvain_communities(G, seed=42, resolution=1, backend="cugraph")
 # communities = custom_louvain(G)
-communities = custom_leiden(G)
+communities = custom_leiden(G, gamma=0.0001)
 
 # communities = louvain_communities(G, seed=42, resolution=1, backend="parallel")
 end = time.time()
@@ -68,4 +68,4 @@ nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
 
 figs_dir = Path.resolve(curr_path / "../figs")
 
-plt.savefig(figs_dir / "graph_jazz_leiden.pdf")
+plt.savefig(figs_dir / "graph_jazz_leiden_2.pdf")
