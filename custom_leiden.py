@@ -344,7 +344,7 @@ def merge_nodes_subset(G, p_refined, S: CommunityData, gamma, theta=1):
 
         S_tot += vertex_candidate_in_edge_weight(G, node, remaining_comms)
 
-    print(S_tot)
+    # print(S_tot)
 
     # consider only nodes that are well connected within subset S, put them in R
     for node in S.nodes:
@@ -365,7 +365,7 @@ def merge_nodes_subset(G, p_refined, S: CommunityData, gamma, theta=1):
 
     random.shuffle(R)
 
-    print(f"R: {R}")
+    # print(f"R: {R}")
 
     for v in R:
         if not is_in_singleton_community(G, v):
@@ -398,7 +398,7 @@ def merge_nodes_subset(G, p_refined, S: CommunityData, gamma, theta=1):
 
         # choose random community C' from T
 
-        print(f"Len T: {len(T)}")
+        # print(f"Len T: {len(T)}")
 
         probs = []
 
@@ -416,7 +416,10 @@ def merge_nodes_subset(G, p_refined, S: CommunityData, gamma, theta=1):
                 best_change = change
                 best_change_idx = i
 
-        print(f"Probs: {probs}")
+        if best_change_idx is None:
+            continue
+
+        # print(f"Probs: {probs}")
 
         # idxs = list(range(len(probs)))
         # rand_idx = random.choices(idxs, weights=probs, k=1)[0]
@@ -660,7 +663,7 @@ def get_final_communities(G):
 
 
 
-def custom_leiden(G, gamma=1):
+def custom_leiden(G, gamma=1, max_iter=None):
     root_graph = G
 
     num_iter = 0
@@ -700,24 +703,24 @@ def custom_leiden(G, gamma=1):
 
         G = p_refined
 
-        weights = []
-        for u, v, data in G.edges(data=True):
-            weight = data.get("weight", 1)
-            weights.append(weight)
+        # weights = []
+        # for u, v, data in G.edges(data=True):
+        #     weight = data.get("weight", 1)
+        #     weights.append(weight)
         
-        print(f"Weights: {weights}")
+        # print(f"Weights: {weights}")
 
-        agg_counts = []
-        for node, data in p.nodes(data=True):
-            comm_data = data["community_data"]
-            agg_counts.append(comm_data.aggregate_count)
+        # agg_counts = []
+        # for node, data in p.nodes(data=True):
+        #     comm_data = data["community_data"]
+        #     agg_counts.append(comm_data.aggregate_count)
         
-        print(f"Agg counts: {agg_counts}")
+        # print(f"Agg counts: {agg_counts}")
 
         num_iter += 1
 
-        # if num_iter > 10:
-        #     return
+        if max_iter is not None and num_iter > max_iter:
+            break
 
     # since all communities were found to have one node, we can safely propagate from G, rather
     # than from community_graph
