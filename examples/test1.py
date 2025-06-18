@@ -20,10 +20,10 @@ curr_path = Path(os.path.realpath(os.path.dirname(__file__)))
 # Create a graph
 # G = nx.karate_club_graph()
 # G = nx.read_edgelist(curr_path / "../data/flickr-groupmemberships/out.flickr-groupmemberships", comments="%")
-G = nx.read_edgelist(curr_path / "../data/arenas-jazz/out.arenas-jazz", comments="%")
+# G = nx.read_edgelist(curr_path / "../data/arenas-jazz/out.arenas-jazz", comments="%")
 
-# data_path = Path.resolve(curr_path / "../validation/clique_ring.txt")
-# G = nx.read_edgelist(data_path, nodetype=int)
+data_path = Path.resolve(curr_path / "../validation/clique_ring.txt")
+G = nx.read_edgelist(data_path, nodetype=int)
 
 # data_path = Path.resolve(curr_path / "../validation/clique_ring_weighted.txt")
 # G = nx.read_weighted_edgelist(data_path, nodetype=int)
@@ -39,7 +39,7 @@ start = time.time()
 # communities = leiden_communities(G, seed=42, resolution=1, backend="cugraph")
 # communities = louvain_communities(G, seed=42, resolution=1, backend="cugraph")
 # communities = custom_louvain(G)
-communities = custom_leiden(G, gamma=0.1)
+communities = custom_leiden(G, gamma=0.05)
 
 # communities = louvain_communities(G, seed=42, resolution=1, backend="parallel")
 end = time.time()
@@ -58,6 +58,7 @@ for i, comm in enumerate(communities):
 
 # Generate a color for each community
 colors = [node_color_map[node] for node in G.nodes()]
+print(colors)
 
 # Draw the graph
 pos = nx.spring_layout(G, seed=42)
@@ -68,4 +69,4 @@ nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
 
 figs_dir = Path.resolve(curr_path / "../figs")
 
-plt.savefig(figs_dir / "graph_jazz_leiden_2.pdf")
+plt.savefig(figs_dir / "clique_ring_leiden.pdf")

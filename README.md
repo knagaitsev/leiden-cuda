@@ -7,3 +7,11 @@ conda activate /pool/kir/conda/cuda-final-proj-2
 conda install -y -c rapidsai -c conda-forge -c nvidia cugraph cuda-cudart cupy nx-cugraph cuda-version=12.0
 pip install matplotlib
 ```
+
+Additional setup if you want to try leidenalg (A different Python package):
+
+```bash
+pip install leidenalg igraph
+```
+
+https://igraph.org/c/#downloads

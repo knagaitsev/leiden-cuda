@@ -15,6 +15,8 @@ class CommunityData:
         self.sum_weights_in = 0
         self.sum_weights_tot = 0
 
+        self.aggregate_count = 0
+
     def add_node(self, node):
         # edges = self.G.edges(node, data=True)
         # for u, v, data in edges:
@@ -34,8 +36,20 @@ class CommunityData:
 
         self.nodes.add(node)
 
+        parent_data = self.G.nodes[node]
+        if "community_data" in parent_data:
+            self.aggregate_count += parent_data["community_data"].aggregate_count
+        else:
+            self.aggregate_count += 1
+
     def remove_node(self, node):
         self.nodes.remove(node)
+
+        parent_data = self.G.nodes[node]
+        if "community_data" in parent_data:
+            self.aggregate_count -= parent_data["community_data"].aggregate_count
+        else:
+            self.aggregate_count -= 1
 
         # edges = self.G.edges(node, data=True)
         # for u, v, data in edges:
@@ -231,7 +245,15 @@ def cpm_change(G, community_graph, node, next_comm, gamma):
     comm_data_old = community_graph.nodes[curr_comm]["community_data"]
     comm_data_new = community_graph.nodes[next_comm]["community_data"]
 
-    delta_H = (k_vc_new - gamma * len(comm_data_new)) - (k_vc_old - gamma * (len(comm_data_old) - 1))
+    agg_count_old = comm_data_old.aggregate_count
+    agg_count_new = comm_data_new.aggregate_count
+
+    node_agg_count = 1
+    node_data = G.nodes[node]
+    if "community_data" in node_data:
+        node_agg_count = node_data["community_data"].aggregate_count
+
+    delta_H = (k_vc_new - gamma * node_agg_count * agg_count_new) - (k_vc_old - gamma * node_agg_count * (agg_count_old - node_agg_count))
 
     return delta_H
 
@@ -376,23 +398,30 @@ def merge_nodes_subset(G, p_refined, S: CommunityData, gamma, theta=1):
 
         # choose random community C' from T
 
+        print(f"Len T: {len(T)}")
+
         probs = []
-        for c in T:
+
+        best_change = 0
+        best_change_idx = None
+        for i, c in enumerate(T):
             # change = move_modularity_change(G, p_refined, v, c)
             change = cpm_change(G, p_refined, v, c, gamma)
             if change >= 0:
                 probs.append(math.exp((1/theta) * change))
             else:
                 probs.append(0)
+            
+            if change > best_change:
+                best_change = change
+                best_change_idx = i
 
-        # print(probs)
+        print(f"Probs: {probs}")
 
-        idxs = list(range(len(probs)))
-
-        # move node v to community C'
-
-        rand_idx = random.choices(idxs, weights=probs, k=1)[0]
-        new_comm = T[rand_idx]
+        # idxs = list(range(len(probs)))
+        # rand_idx = random.choices(idxs, weights=probs, k=1)[0]
+        # new_comm = T[rand_idx]
+        new_comm = T[best_change_idx]
         
         # TODO: need to make sure that this updates the edges and edge weights in p_refined, as
         # this gets used when calculating c_in and c_tot above
@@ -647,7 +676,7 @@ def custom_leiden(G, gamma=1):
         G.graph["m"] = m
 
         move_nodes_fast(G, p, gamma)
-        print(f"Running Leiden iteration: {num_iter}, number of communities after move_nodes_fast: {len(p)}")
+        print(f"Running Leiden iteration: {num_iter}, nodes: {len(G)}, number of communities after move_nodes_fast: {len(p)}")
         for node, node_data in p.nodes(data=True):
             comm_data = node_data["community_data"]
             # print(f"comm_data len: {len(comm_data)}")
@@ -670,6 +699,20 @@ def custom_leiden(G, gamma=1):
         p = maintain_p(G, p, p_refined)
 
         G = p_refined
+
+        weights = []
+        for u, v, data in G.edges(data=True):
+            weight = data.get("weight", 1)
+            weights.append(weight)
+        
+        print(f"Weights: {weights}")
+
+        agg_counts = []
+        for node, data in p.nodes(data=True):
+            comm_data = data["community_data"]
+            agg_counts.append(comm_data.aggregate_count)
+        
+        print(f"Agg counts: {agg_counts}")
 
         num_iter += 1
 
