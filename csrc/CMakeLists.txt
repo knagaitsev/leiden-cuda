@@ -7,4 +7,9 @@ set_target_properties(mycuda PROPERTIES
     CUDA_SEPARABLE_COMPILATION ON
 )
 
+add_executable(mycuda_test main.cpp my_kernel.cu)
+set_target_properties(mycuda_test PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+)
+
 target_include_directories(mycuda PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

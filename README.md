@@ -6,6 +6,13 @@ conda create -y --prefix /pool/kir/conda/cuda-final-proj-2 python=3.12
 conda activate /pool/kir/conda/cuda-final-proj-2
 conda install -y -c rapidsai -c conda-forge -c nvidia cugraph cuda-cudart cupy nx-cugraph cuda-version=12.0
 pip install matplotlib
+pip install pybind11
+```
+
+```
+mkdir build && cd build
+cmake -Dpybind11_DIR=$(python -m pybind11 --cmakedir) ..
+make
 ```
 
 Additional setup if you want to try leidenalg (A different Python package):
