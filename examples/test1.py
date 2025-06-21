@@ -39,7 +39,7 @@ start = time.time()
 # communities = leiden_communities(G, seed=42, resolution=1, backend="cugraph")
 # communities = louvain_communities(G, seed=42, resolution=1, backend="cugraph")
 # communities = custom_louvain(G)
-communities = custom_leiden(G, gamma=0.05, max_iter=10)
+communities = custom_leiden(G, gamma=0.05, max_iter=None)
 
 # communities = louvain_communities(G, seed=42, resolution=1, backend="parallel")
 end = time.time()
@@ -58,7 +58,7 @@ for i, comm in enumerate(communities):
 
 # Generate a color for each community
 colors = [node_color_map[node] for node in G.nodes()]
-print(colors)
+# print(colors)
 
 # Draw the graph
 pos = nx.spring_layout(G, seed=42)

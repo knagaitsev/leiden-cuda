@@ -109,6 +109,8 @@ def vertex_total_edge_weight(G, node):
     
     return tot
 
+# in_edge_weight here refers to edge weight only within the current subset S
+# (it does not refer to edge weight within the current community of the node in this case!)
 def vertex_candidate_in_edge_weight(G, node, remaining_comms: set):
     edges = G.edges(node, data=True)
 
@@ -132,6 +134,8 @@ def vertex_candidate_in_edge_weight(G, node, remaining_comms: set):
 
     return tot
 
+# in_edge_weight here refers to edge weight only within the current subset S
+# (it does not refer to edge weight within this community in this case!)
 def comm_candidate_in_edge_weight(G, node, remaining_comms: set):
     edges = G.edges(node, data=True)
 
@@ -150,6 +154,16 @@ def comm_candidate_in_edge_weight(G, node, remaining_comms: set):
             tot += weight
 
     return tot
+
+def candidate_node_count(G, node):
+    node_agg_count = 1
+    node_data = G.nodes[node]
+    if "community_data" in node_data:
+        node_agg_count = node_data["community_data"].aggregate_count
+    
+    return node_agg_count
+
+# def comm_candidate_node_count(G, node):
 
 def modularity(G):
     m = G.graph["m"]
@@ -342,7 +356,8 @@ def merge_nodes_subset(G, p_refined, S: CommunityData, gamma, theta=1):
     for node in S.nodes:
         # S_tot += vertex_total_edge_weight(G, node)
 
-        S_tot += vertex_candidate_in_edge_weight(G, node, remaining_comms)
+        # S_tot += vertex_candidate_in_edge_weight(G, node, remaining_comms)
+        S_tot += candidate_node_count(G, node)
 
     # print(S_tot)
 
@@ -358,14 +373,14 @@ def merge_nodes_subset(G, p_refined, S: CommunityData, gamma, theta=1):
         # they may make sense
         v_in = vertex_candidate_in_edge_weight(G, node, remaining_comms)
         # v_tot = vertex_total_edge_weight(G, node)
-        v_tot = v_in
+        v_tot = candidate_node_count(G, node)
 
         if v_in >= gamma * v_tot * (S_tot - v_tot):
             R.append(node)
 
-    random.shuffle(R)
+    print(f"R: {R}, S_tot: {S_tot}")
 
-    # print(f"R: {R}")
+    random.shuffle(R)
 
     for v in R:
         if not is_in_singleton_community(G, v):
@@ -391,7 +406,7 @@ def merge_nodes_subset(G, p_refined, S: CommunityData, gamma, theta=1):
             # they may make sense
             c_in = comm_candidate_in_edge_weight(p_refined, c, remaining_comms)
             # c_tot = vertex_total_edge_weight(p_refined, c)
-            c_tot = c_in
+            c_tot = candidate_node_count(p_refined, c)
 
             if c_in >= gamma * c_tot * (S_tot - c_tot):
                 T.append(c)
