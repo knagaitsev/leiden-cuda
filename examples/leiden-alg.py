@@ -5,21 +5,18 @@ from pathlib import Path
 import os
 
 curr_path = Path(os.path.realpath(os.path.dirname(__file__)))
-data_path = (curr_path / "../data/arenas-jazz/out.arenas-jazz").resolve()
 
-# Read edges while skipping lines starting with '%'
-edges = []
-with open(data_path, 'r') as f:
-    for line in f:
-        if not line.startswith('%'):
-            u, v = map(int, line.strip().split())
-            edges.append((u, v))
+# data_path = (curr_path / "../data/arenas-jazz/out.arenas-jazz").resolve()
+# edges = []
+# with open(data_path, 'r') as f:
+#     for line in f:
+#         if not line.startswith('%'):
+#             u, v = map(int, line.strip().split())
+#             edges.append((u, v))
+# G = Graph(edges=edges, directed=False)
 
-# Create igraph Graph from edge list
-G = Graph(edges=edges, directed=False)
-
-# data_path = (curr_path / "../validation/clique_ring.txt").resolve()
-# G = Graph.Read_Edgelist(str(data_path), directed=False)
+data_path = (curr_path / "../validation/clique_ring.txt").resolve()
+G = Graph.Read_Edgelist(str(data_path), directed=False)
 
 # G = ig.Graph.Famous('Zachary')
 
