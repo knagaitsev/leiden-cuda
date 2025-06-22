@@ -1,6 +1,15 @@
 #include <cuda_runtime.h>
 #include <iostream>
 
+typedef struct node_data {
+    uint32_t community;
+    uint32_t agg_count;
+} node_data_t;
+
+typedef struct community_data {
+    uint32_t agg_count;
+} community_data_t;
+
 __global__ void add_kernel(float* a, float* b, float* c, int N) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < N) c[idx] = a[idx] + b[idx];
@@ -24,7 +33,7 @@ extern "C" void launch_add_kernel(float* a, float* b, float* c, int N) {
 
 // two approaches to doing move_nodes_fast: parallelizing at node level is below
 // - another option is parallelizing at edge level, letting each thread consider an edge
-__global__ void move_nodes_fast_kernel(uint32_t *offsets, uint32_t *indices, float *weights, uint32_t *communities, int vertex_count, int edge_count) {
+__global__ void move_nodes_fast_kernel(uint32_t *offsets, uint32_t *indices, float *weights, uint32_t *communities, int vertex_count, int edge_count, float gamma) {
     unsigned int node = threadIdx.x;
     
     // communities[threadIdx.x] = 1;
@@ -46,8 +55,20 @@ __global__ void move_nodes_fast_kernel(uint32_t *offsets, uint32_t *indices, flo
             continue;
         }
 
-        // TODO
-        float delta = 1.0;
+        // total edge weight of incoming edges from new community
+        float k_vc_new = 0.0;
+        // total edge weight of incoming edges from old community
+        float k_vc_old = 0.0;
+
+        // aggregate count of nodes in old community (including current node)
+        int agg_count_old = 0;
+        // aggregate count of nodes in new community (excluding current node)
+        int agg_count_new = 0;
+
+        // aggregate count of current node
+        int node_agg_count = 1;
+
+        float delta = (k_vc_new - gamma * (float)(node_agg_count * agg_count_new)) - (k_vc_old - gamma * (float)(node_agg_count * (agg_count_old - node_agg_count)));
 
         if (delta > best_delta) {
             best_delta = delta;
@@ -77,7 +98,7 @@ T* copy_from_device(T* data_host, T* data_device, int len) {
     cudaMemcpy(data_host, data_device, size, cudaMemcpyDeviceToHost);
 }
 
-extern "C" void move_nodes_fast(uint32_t *offsets, uint32_t *indices, float *weights, uint32_t *communities, int vertex_count, int edge_count) {
+extern "C" void move_nodes_fast(uint32_t *offsets, uint32_t *indices, float *weights, uint32_t *communities, int vertex_count, int edge_count, float gamma) {
     // each thread of the cuda kernel considers one node and attempts to greedily increase the CPM
     // by moving it to the best neighboring community
 
@@ -93,7 +114,7 @@ extern "C" void move_nodes_fast(uint32_t *offsets, uint32_t *indices, float *wei
     dim3 dim_grid(1);
  	dim3 dim_block(vertex_count);
 
-	move_nodes_fast_kernel <<<dim_grid, dim_block>>> (offsets_device, indices_device, weights_device, communities_device, vertex_count, edge_count);
+	move_nodes_fast_kernel <<<dim_grid, dim_block>>> (offsets_device, indices_device, weights_device, communities_device, vertex_count, edge_count, gamma);
 
     cudaDeviceSynchronize();
 

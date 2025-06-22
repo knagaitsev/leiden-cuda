@@ -19,6 +19,8 @@ void leiden(std::vector<uint32_t> offsets, std::vector<uint32_t> indices, std::v
         communities.push_back(i);
     }
 
+    float gamma = 0.05;
+
     move_nodes_fast(offsets.data(), indices.data(), weights.data(), communities.data(), vertex_count, edge_count);
 
     for (int i = 0; i < vertex_count; i++) {
