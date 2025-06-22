@@ -1,9 +1,9 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 
-extern "C" void launch_add_kernel(float* a, float* b, float* c, int N);
-
 namespace py = pybind11;
+
+void leiden(float *a, float *b, float *c, int N);
 
 py::array_t<float> py_add(py::array_t<float> a, py::array_t<float> b) {
     auto buf_a = a.request(), buf_b = b.request();
@@ -13,7 +13,7 @@ py::array_t<float> py_add(py::array_t<float> a, py::array_t<float> b) {
     py::array_t<float> result(buf_a.size);
     auto buf_c = result.request();
 
-    launch_add_kernel((float*)buf_a.ptr, (float*)buf_b.ptr, (float*)buf_c.ptr, buf_a.size);
+    leiden((float*)buf_a.ptr, (float*)buf_b.ptr, (float*)buf_c.ptr, buf_a.size);
 
     return result;
 }
