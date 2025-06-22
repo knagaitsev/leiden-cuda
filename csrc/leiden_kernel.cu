@@ -22,8 +22,42 @@ extern "C" void launch_add_kernel(float* a, float* b, float* c, int N) {
     cudaFree(d_a); cudaFree(d_b); cudaFree(d_c);
 }
 
+// two approaches to doing move_nodes_fast: parallelizing at node level is below
+// - another option is parallelizing at edge level, letting each thread consider an edge
 __global__ void move_nodes_fast_kernel(uint32_t *offsets, uint32_t *indices, float *weights, uint32_t *communities, int vertex_count, int edge_count) {
-    communities[threadIdx.x] = 1;
+    unsigned int node = threadIdx.x;
+    
+    // communities[threadIdx.x] = 1;
+    uint32_t offset = offsets[node];
+    uint32_t offsetNext = offsets[node + 1];
+
+    uint32_t curr_comm = communities[node];
+
+    uint32_t best_comm = curr_comm;
+    float best_delta = 0;
+
+    for (uint32_t i = offset; i < offsetNext; i++) {
+        uint32_t neighbor = indices[i];
+        float weight = weights[i];
+
+        uint32_t neighbor_comm = communities[neighbor];
+
+        if (neighbor_comm == curr_comm || neighbor_comm == best_comm) {
+            continue;
+        }
+
+        // TODO
+        float delta = 1.0;
+
+        if (delta > best_delta) {
+            best_delta = delta;
+            best_comm = neighbor_comm;
+        }
+    }
+
+    if (best_comm != curr_comm) {
+        communities[node] = best_comm;
+    }
 }
 
 template <typename T>
