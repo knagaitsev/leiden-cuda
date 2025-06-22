@@ -16,8 +16,12 @@ void leiden(std::vector<uint32_t> offsets, std::vector<uint32_t> indices, std::v
 
     std::vector<uint32_t> communities;
     for (uint32_t i = 0; i < vertex_count; i++) {
-        communities[i] = i;
+        communities.push_back(i);
     }
 
     move_nodes_fast(offsets.data(), indices.data(), weights.data(), communities.data(), vertex_count, edge_count);
+
+    for (int i = 0; i < vertex_count; i++) {
+        std::cout << "Community " << i << ": " << communities[i] << "\n";
+    }
 }

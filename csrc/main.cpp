@@ -6,7 +6,7 @@
 #include <map>
 #include <algorithm>
 
-void leiden(float *a, float *b, float *c, int N);
+void leiden(std::vector<uint32_t> offsets, std::vector<uint32_t> indices, std::vector<float> weights);
 
 typedef std::vector<std::pair<std::pair<uint32_t, uint32_t>, float>> edge_list_t;
 
@@ -101,6 +101,8 @@ int main() {
     std::cout << "Offsets size: " << offsets.size() << "\n";
     std::cout << "Indices size: " << indices.size() << "\n";
     std::cout << "Weights size: " << weights.size() << "\n";
+
+    leiden(offsets, indices, weights);
 
     // int N = 1024;
     // float *a = new float[N];
