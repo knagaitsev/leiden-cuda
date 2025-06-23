@@ -39,7 +39,17 @@ extern "C" void launch_add_kernel(float* a, float* b, float* c, int N) {
 
 // parallelized at node level
 // - we should also try parallelizing at edge level
-__global__ void gather_move_candidates_kernel(uint32_t *offsets, uint32_t *indices, float *weights, node_data_t *node_data, comm_data_t *comm_data, int vertex_count, int edge_count, int comm_count, float gamma) {
+__global__ void gather_move_candidates_kernel(
+    uint32_t *offsets,
+    uint32_t *indices,
+    float *weights,
+    node_data_t *node_data,
+    comm_data_t *comm_data,
+    int vertex_count,
+    int edge_count,
+    int comm_count,
+    float gamma
+) {
     unsigned int node = threadIdx.x;
     
     // communities[threadIdx.x] = 1;
@@ -266,7 +276,17 @@ void copy_from_device(T* data_host, T* data_device, int len) {
     cudaMemcpy(data_host, data_device, size, cudaMemcpyDeviceToHost);
 }
 
-extern "C" void move_nodes_fast(uint32_t *offsets, uint32_t *indices, float *weights, node_data_t *node_data, comm_data_t *comm_data, int vertex_count, int edge_count, int comm_count, float gamma) {
+extern "C" void move_nodes_fast(
+    uint32_t *offsets,
+    uint32_t *indices,
+    float *weights,
+    node_data_t *node_data,
+    comm_data_t *comm_data,
+    int vertex_count,
+    int edge_count,
+    int comm_count,
+    float gamma
+) {
     // each thread of the cuda kernel considers one node and attempts to greedily increase the CPM
     // by moving it to the best neighboring community
 
@@ -292,7 +312,19 @@ extern "C" void move_nodes_fast(uint32_t *offsets, uint32_t *indices, float *wei
 
     // gather_move_candidates_kernel <<<dim_grid, dim_block>>> (offsets_device, indices_device, weights_device, node_data_device, comm_data_device, vertex_count, edge_count, comm_count, gamma);
 
-	move_nodes_fast_kernel <<<dim_grid, dim_block>>> (offsets_device, indices_device, weights_device, node_data_device, comm_data_device, vertex_count, edge_count, comm_count, gamma, changed_device, partition_device);
+	move_nodes_fast_kernel <<<dim_grid, dim_block>>> (
+        offsets_device,
+        indices_device,
+        weights_device,
+        node_data_device,
+        comm_data_device,
+        vertex_count,
+        edge_count,
+        comm_count,
+        gamma,
+        changed_device,
+        partition_device
+    );
     cudaDeviceSynchronize();
 
     copy_from_device(comm_data, comm_data_device, comm_count);
@@ -329,14 +361,32 @@ extern "C" void move_nodes_fast(uint32_t *offsets, uint32_t *indices, float *wei
 
     part_scan_data_t *part_scan_data_device = allocate_and_copy_to_device(part_scan_data, comm_count);
 
-    create_partition_kernel <<<dim_grid, dim_block>>> (node_data_device, comm_data_device, part_scan_data_device, partition_device, vertex_count, comm_count);
+    create_partition_kernel <<<dim_grid, dim_block>>> (
+        node_data_device,
+        comm_data_device,
+        part_scan_data_device,
+        partition_device,
+        vertex_count,
+        comm_count
+    );
     cudaDeviceSynchronize();
 
     dim3 refine_dim_block(partition_count);
 
     uint32_t *partition_offsets_device = allocate_and_copy_to_device(partition_offsets, partition_count);
 
-    refine_kernel <<<dim_grid, refine_dim_block>>> (offsets_device, indices_device, weights_device, node_data_device, vertex_count, edge_count, gamma, partition_device, partition_offsets_device, partition_count);
+    refine_kernel <<<dim_grid, refine_dim_block>>> (
+        offsets_device,
+        indices_device,
+        weights_device,
+        node_data_device,
+        vertex_count,
+        edge_count,
+        gamma,
+        partition_device,
+        partition_offsets_device, 
+        partition_count
+    );
     cudaDeviceSynchronize();
 
     copy_from_device(partition, partition_device, vertex_count);
