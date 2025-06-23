@@ -243,7 +243,8 @@ __global__ void refine_get_r_kernel(
     int partition_count,
     uint32_t *node_part,
     uint32_t *r_len,
-    uint32_t *r
+    uint32_t *r,
+    uint32_t *s_tots
 ) {
     unsigned int part_idx = threadIdx.x;
 
@@ -266,6 +267,8 @@ __global__ void refine_get_r_kernel(
 
     // need to sync threads since one partition will see node_part data of other partitions
     __syncthreads();
+
+    s_tots[part_idx] = s_tot;
 
     int local_r_len = 0;
 
@@ -297,6 +300,73 @@ __global__ void refine_get_r_kernel(
     }
 
     r_len[part_idx] = local_r_len;
+}
+
+__global__ void refine_kernel(
+    uint32_t *offsets,
+    uint32_t *indices,
+    float *weights,
+    node_data_t *node_data,
+    int vertex_count,
+    int edge_count,
+    float gamma,
+    uint32_t *partition,
+    uint32_t *partition_offsets,
+    int partition_count,
+    uint32_t *node_part,
+    uint32_t *r_len,
+    uint32_t *r,
+    uint32_t *s_tots,
+    uint32_t *node_refined_comms,
+    float *refined_comm_in_edge_weights,
+    uint32_t *refined_comm_agg_counts
+) {
+    unsigned int part_idx = threadIdx.x;
+    uint32_t part_offset = partition_offsets[part_idx];
+    // uint32_t part_offset_next = partition_offsets[part_idx + 1];
+    uint32_t local_r_len = r_len[part_idx];
+    uint32_t s_tot = s_tots[part_idx];
+
+    // this iterates over R (subset of nodes in the partition being refined that are "well-connected")
+    for (int i = part_offset; i < part_offset + local_r_len; i++) {
+        uint32_t node = r[i];
+        uint32_t node_comm = node_refined_comms[node];
+
+        bool is_in_singleton_community = true;
+        uint32_t v_offset = offsets[node];
+        uint32_t v_offset_next = offsets[node + 1];
+
+        // this iterates over the neighbors of the node we are currently looking at
+        for (int j = v_offset; j < v_offset_next; j++) {
+            uint32_t neighbor = indices[j];
+            float weight = weights[j];
+
+            uint32_t neighbor_comm = node_refined_comms[neighbor];
+
+            // TODO: could be smarter about checking if this node is in a singleton partition
+            if (node_comm == neighbor_comm) {
+                is_in_singleton_community = false;
+                break;
+            }
+
+            uint32_t c_tot = refined_comm_agg_counts[neighbor_comm];
+            uint32_t c_in = refined_comm_in_edge_weights[neighbor_comm];
+
+            if (c_in >= gamma * (float)(c_tot * (s_tot - c_tot))) {
+
+            }
+        }
+
+        if (!is_in_singleton_community) {
+            continue;
+        }
+
+        // TODO: move node to best community
+        // if we actually perform a move, need to upate all of the following:
+        // uint32_t *node_refined_comms,
+        // float *refined_comm_in_edge_weights,
+        // uint32_t *refined_comm_agg_counts
+    }
 }
 
 template <typename T>
@@ -359,6 +429,22 @@ extern "C" void move_nodes_fast(
     uint32_t *r = (uint32_t *)malloc(vertex_count * sizeof(uint32_t));
     uint32_t *r_device = allocate_and_copy_to_device(r, vertex_count);
 
+
+    uint32_t *node_refined_comms = (uint32_t *)malloc(vertex_count * sizeof(uint32_t));
+    float *refined_comm_in_edge_weights = (float *)malloc(vertex_count * sizeof(float));
+    uint32_t *refined_comm_agg_counts = (uint32_t *)malloc(vertex_count * sizeof(uint32_t));
+
+    for (int i = 0; i < vertex_count; i++) {
+        node_refined_comms[i] = i;
+        refined_comm_in_edge_weights[i] = 0;
+        // IMPORTANT: must make sure we get the agg count here from the node
+        refined_comm_agg_counts[i] = node_data[i].agg_count;
+    }
+
+    uint32_t *node_refined_comms_device = allocate_and_copy_to_device(node_refined_comms, vertex_count);
+    float *refined_comm_in_edge_weights_device = allocate_and_copy_to_device(refined_comm_in_edge_weights, vertex_count);
+    uint32_t *refined_comm_agg_counts_device = allocate_and_copy_to_device(refined_comm_agg_counts, vertex_count);
+
     dim3 dim_grid(1);
  	dim3 dim_block(vertex_count);
 
@@ -413,6 +499,9 @@ extern "C" void move_nodes_fast(
     uint32_t *r_len = (uint32_t *)malloc(partition_count * sizeof(uint32_t));
     uint32_t *r_len_device = allocate_and_copy_to_device(r_len, partition_count);
 
+    uint32_t *s_tots = (uint32_t *)malloc(partition_count * sizeof(uint32_t));
+    uint32_t *s_tots_device = allocate_and_copy_to_device(s_tots, partition_count);
+
     part_scan_data_t *part_scan_data_device = allocate_and_copy_to_device(part_scan_data, comm_count);
 
     create_partition_kernel <<<dim_grid, dim_block>>> (
@@ -442,7 +531,29 @@ extern "C" void move_nodes_fast(
         partition_count,
         node_part_device,
         r_len_device,
-        r_device
+        r_device,
+        s_tots_device
+    );
+    cudaDeviceSynchronize();
+
+    refine_kernel <<<dim_grid, refine_dim_block>>> (
+        offsets_device,
+        indices_device,
+        weights_device,
+        node_data_device,
+        vertex_count,
+        edge_count,
+        gamma,
+        partition_device,
+        partition_offsets_device, 
+        partition_count,
+        node_part_device,
+        r_len_device,
+        r_device,
+        s_tots_device,
+        node_refined_comms_device,
+        refined_comm_in_edge_weights_device,
+        refined_comm_agg_counts_device
     );
     cudaDeviceSynchronize();
 
