@@ -389,6 +389,12 @@ __global__ void refine_kernel(
 
         for (int j = v_offset; j < v_offset_next; j++) {
             uint32_t neighbor = indices[j];
+
+            // skip self-edges
+            if (neighbor == node) {
+                continue;
+            }
+
             uint32_t neighbor_comm = node_refined_comms[neighbor];
             // TODO: could be smarter about checking if this node is in a singleton partition
             if (curr_comm == neighbor_comm) {
@@ -415,6 +421,18 @@ __global__ void refine_kernel(
         // this iterates over the neighbors of the node we are currently looking at
         for (int j = v_offset; j < v_offset_next; j++) {
             uint32_t neighbor = indices[j];
+
+            // skip self-edges
+            if (neighbor == node) {
+                continue;
+            }
+
+            uint32_t neighbor_part_idx = node_part[neighbor];
+            // only consider neighbors within this partition
+            if (neighbor_part_idx != part_idx) {
+                continue;
+            }
+
             float weight = weights[j];
 
             uint32_t neighbor_comm = node_refined_comms[neighbor];
@@ -436,9 +454,9 @@ __global__ void refine_kernel(
                 float delta = (k_vc_new - gamma * (float)(node_agg_count * agg_count_new)) - (k_vc_old - gamma * (float)(node_agg_count * (agg_count_old - node_agg_count)));
 
                 if (delta > best_delta) {
-                    // printf("Node: %d, Delta: %f, best_comm: %d\n", node, delta, best_comm);
                     best_delta = delta;
                     best_comm = neighbor_comm;
+                    printf("Node: %d, Delta: %f, best_comm: %d\n", node, delta, best_comm);
                 }
             }
         }
@@ -450,6 +468,8 @@ __global__ void refine_kernel(
         // uint32_t *refined_comm_agg_counts
 
         if (best_comm != curr_comm) {
+            // printf("Found move for node: %d\n", node);
+
             refined_comm_agg_counts[best_comm] += node_agg_count;
             refined_comm_agg_counts[curr_comm] -= node_agg_count;
 
@@ -458,6 +478,32 @@ __global__ void refine_kernel(
             // to the new node, given that the new node will now be part of best_comm
             // - we can simultaneously add the edge weight to nodes outside of best_comm (making sure to avoid including self-edge weight)
             // and ensuring that the edge weight we are adding is to nodes within the current partition (skip if not)
+
+            float refined_comm_in_edge_weight_change = 0.0f;
+            for (int j = v_offset; j < v_offset_next; j++) {
+                uint32_t neighbor = indices[j];
+                if (neighbor == node) {
+                    continue;
+                }
+
+                float weight = weights[j];
+
+                uint32_t neighbor_part_idx = node_part[neighbor];
+                uint32_t neighbor_comm = node_refined_comms[neighbor];
+
+                if (neighbor_part_idx == part_idx) {
+                    if (neighbor_comm == best_comm) {
+                        refined_comm_in_edge_weight_change -= weight;
+                    } else {
+                        refined_comm_in_edge_weight_change += weight;
+                    }
+                }
+            }
+
+            // since this is a singleton community we are moving out of (not actually needed)
+            refined_comm_in_edge_weights[curr_comm] = 0.0f;
+
+            refined_comm_in_edge_weights[best_comm] += refined_comm_in_edge_weight_change;
             
             // IMPORTANT: this must happen after updating refined_comm_in_edge_weights
             // because we do not want to involve self-edges in the above computation
@@ -658,26 +704,26 @@ extern "C" void move_nodes_fast(
     );
     cudaDeviceSynchronize();
 
-    // refine_kernel <<<dim_grid, refine_dim_block>>> (
-    //     offsets_device,
-    //     indices_device,
-    //     weights_device,
-    //     node_data_device,
-    //     vertex_count,
-    //     edge_count,
-    //     gamma,
-    //     partition_device,
-    //     partition_offsets_device, 
-    //     partition_count,
-    //     node_part_device,
-    //     r_len_device,
-    //     r_device,
-    //     s_tots_device,
-    //     node_refined_comms_device,
-    //     refined_comm_in_edge_weights_device,
-    //     refined_comm_agg_counts_device
-    // );
-    // cudaDeviceSynchronize();
+    refine_kernel <<<dim_grid, refine_dim_block>>> (
+        offsets_device,
+        indices_device,
+        weights_device,
+        node_data_device,
+        vertex_count,
+        edge_count,
+        gamma,
+        partition_device,
+        partition_offsets_device, 
+        partition_count,
+        node_part_device,
+        r_len_device,
+        r_device,
+        s_tots_device,
+        node_refined_comms_device,
+        refined_comm_in_edge_weights_device,
+        refined_comm_agg_counts_device
+    );
+    cudaDeviceSynchronize();
 
     copy_from_device(refined_comm_in_edge_weights, refined_comm_in_edge_weights_device, vertex_count);
 
