@@ -229,7 +229,8 @@ __global__ void create_partition_kernel(
     partition[overall_offset + comm_offset] = node;
 }
 
-__global__ void refine_kernel(
+// this gets the "well-connected" nodes within the partition we are refining
+__global__ void refine_get_r_kernel(
     uint32_t *offsets,
     uint32_t *indices,
     float *weights,
@@ -239,18 +240,63 @@ __global__ void refine_kernel(
     float gamma,
     uint32_t *partition,
     uint32_t *partition_offsets,
-    int partition_count
+    int partition_count,
+    uint32_t *node_part,
+    uint32_t *r_len,
+    uint32_t *r
 ) {
     unsigned int part_idx = threadIdx.x;
 
     uint32_t part_offset = partition_offsets[part_idx];
     uint32_t part_offset_next = partition_offsets[part_idx + 1];
 
+    // printf("Partition %d: %d - %d\n", part_idx, part_offset, part_offset_next);
+
+    uint32_t s_tot = 0;
+
     for (int i = part_offset; i < part_offset_next; i++) {
         uint32_t node = partition[i];
         // TODO: may need to mark that this node is a member of this partition, so that we can
         // tell when we iterate the nodes
+
+        s_tot += node_data[node].agg_count;
+
+        node_part[node] = part_idx;
     }
+
+    // need to sync threads since one partition will see node_part data of other partitions
+    __syncthreads();
+
+    int local_r_len = 0;
+
+    for (int i = part_offset; i < part_offset_next; i++) {
+        uint32_t node = partition[i];
+        
+        uint32_t v_tot = node_data[node].agg_count;
+
+        uint32_t v_in = 0;
+
+        uint32_t v_offset = offsets[node];
+        uint32_t v_offset_next = offsets[node + 1];
+
+        for (int j = v_offset; j < v_offset_next; j++) {
+            uint32_t neighbor = indices[j];
+            float weight = weights[j];
+
+            uint32_t neighbor_part_idx = node_part[neighbor];
+
+            if (neighbor_part_idx == part_idx) {
+                v_in += weight;
+            }
+        }
+
+        if (v_in >= gamma * (float)(v_tot * (s_tot - v_tot))) {
+            r[part_offset + local_r_len] = node;
+            local_r_len++;
+        }
+    }
+
+    r_len[part_idx] = local_r_len;
 }
 
 template <typename T>
@@ -307,6 +353,12 @@ extern "C" void move_nodes_fast(
     uint32_t *partition = (uint32_t *)malloc(vertex_count * sizeof(uint32_t));
     uint32_t *partition_device = allocate_and_copy_to_device(partition, vertex_count);
 
+    uint32_t *node_part = (uint32_t *)malloc(vertex_count * sizeof(uint32_t));
+    uint32_t *node_part_device = allocate_and_copy_to_device(node_part, vertex_count);
+
+    uint32_t *r = (uint32_t *)malloc(vertex_count * sizeof(uint32_t));
+    uint32_t *r_device = allocate_and_copy_to_device(r, vertex_count);
+
     dim3 dim_grid(1);
  	dim3 dim_block(vertex_count);
 
@@ -341,7 +393,6 @@ extern "C" void move_nodes_fast(
 
     // TODO: we can get away with making this smaller, but it changes the indexing approach in the next kernel
     part_scan_data_t *part_scan_data = (part_scan_data_t *)malloc(comm_count * sizeof(part_scan_data_t));
-
     uint32_t *partition_offsets = (uint32_t *)malloc((partition_count + 1) * sizeof(uint32_t));
 
     uint32_t scan_idx = 0;
@@ -359,6 +410,9 @@ extern "C" void move_nodes_fast(
     }
     partition_offsets[partition_count] = scan_idx;
 
+    uint32_t *r_len = (uint32_t *)malloc(partition_count * sizeof(uint32_t));
+    uint32_t *r_len_device = allocate_and_copy_to_device(r_len, partition_count);
+
     part_scan_data_t *part_scan_data_device = allocate_and_copy_to_device(part_scan_data, comm_count);
 
     create_partition_kernel <<<dim_grid, dim_block>>> (
@@ -373,9 +427,9 @@ extern "C" void move_nodes_fast(
 
     dim3 refine_dim_block(partition_count);
 
-    uint32_t *partition_offsets_device = allocate_and_copy_to_device(partition_offsets, partition_count);
+    uint32_t *partition_offsets_device = allocate_and_copy_to_device(partition_offsets, partition_count + 1);
 
-    refine_kernel <<<dim_grid, refine_dim_block>>> (
+    refine_get_r_kernel <<<dim_grid, refine_dim_block>>> (
         offsets_device,
         indices_device,
         weights_device,
@@ -385,13 +439,24 @@ extern "C" void move_nodes_fast(
         gamma,
         partition_device,
         partition_offsets_device, 
-        partition_count
+        partition_count,
+        node_part_device,
+        r_len_device,
+        r_device
     );
     cudaDeviceSynchronize();
+
+    copy_from_device(r_len, r_len_device, partition_count);
 
     copy_from_device(partition, partition_device, vertex_count);
 
     printf("\n---- Partition count %d -----\n\n", partition_count);
+
+    for (int i = 0; i < partition_count; i++) {
+        printf("R len for partition %d: %d\n", i, r_len[i]);
+    }
+
+    printf("\n\n");
 
     // for (int i = 0; i < vertex_count; i++) {
     //     printf("Partition idx %d: %d\n", i, partition[i]);
