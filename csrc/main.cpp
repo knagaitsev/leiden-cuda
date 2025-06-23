@@ -32,6 +32,14 @@ offsets_indices_weights_t to_csr(edge_list_t edge_list) {
             neighbors.push_back(new_edge_to_v);
             vertex_map[u] = neighbors;
         }
+
+        if (vertex_map.find(v) != vertex_map.end()) {
+            vertex_map[v].push_back(new_edge_to_u);
+        } else {
+            std::vector<std::pair<uint32_t, float>> neighbors;
+            neighbors.push_back(new_edge_to_u);
+            vertex_map[v] = neighbors;
+        }
     }
 
     std::vector<uint32_t> vertices;

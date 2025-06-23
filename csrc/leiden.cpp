@@ -8,6 +8,7 @@
 
 typedef struct node_data {
     uint32_t community;
+    uint32_t move_candidate;
     uint32_t agg_count;
 } node_data_t;
 
@@ -28,11 +29,16 @@ void leiden(std::vector<uint32_t> offsets, std::vector<uint32_t> indices, std::v
     std::vector<comm_data_t> comm_data;
 
     for (uint32_t i = 0; i < vertex_count; i++) {
-        node_data_t node = { .community = i, .agg_count = 1 };
+        node_data_t node = { .community = i, .move_candidate = i, .agg_count = 1 };
         node_data.push_back(node);
 
         comm_data_t comm = { .agg_count = 1 };
         comm_data.push_back(comm);
+
+        // uint32_t offset = offsets[i];
+        // uint32_t offset_next = offsets[i + 1];
+        // uint32_t node_edge_count = offset_next - offset;
+        // std::cout << "Node " << i << " edge count: " << node_edge_count << "\n";
     }
 
     int comm_count = vertex_count;
@@ -44,7 +50,7 @@ void leiden(std::vector<uint32_t> offsets, std::vector<uint32_t> indices, std::v
     std::cout << "\n";
 
     for (int i = 0; i < vertex_count; i++) {
-        std::cout << "Vertex " << i << " community: " << node_data[i].community << "\n";
+        std::cout << "Vertex " << i << " candidate: " << node_data[i].community << " -> " << node_data[i].move_candidate << "\n";
     }
 
     std::cout << "\n";
