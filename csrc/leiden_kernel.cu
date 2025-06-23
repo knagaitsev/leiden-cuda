@@ -108,7 +108,19 @@ __global__ void gather_move_candidates_kernel(uint32_t *offsets, uint32_t *indic
 
 // two approaches to doing move_nodes_fast: parallelizing at node level is below
 // - another option is parallelizing at edge level, letting each thread consider an edge
-__global__ void move_nodes_fast_kernel(uint32_t *offsets, uint32_t *indices, float *weights, node_data_t *node_data, comm_data_t *comm_data, int vertex_count, int edge_count, int comm_count, float gamma, bool *changed, uint32_t *partition) {
+__global__ void move_nodes_fast_kernel(
+    uint32_t *offsets,
+    uint32_t *indices,
+    float *weights,
+    node_data_t *node_data,
+    comm_data_t *comm_data,
+    int vertex_count,
+    int edge_count,
+    int comm_count,
+    float gamma,
+    bool *changed,
+    uint32_t *partition
+) {
     unsigned int node = threadIdx.x;
 
     uint32_t offset = offsets[node];
@@ -190,7 +202,14 @@ __global__ void move_nodes_fast_kernel(uint32_t *offsets, uint32_t *indices, flo
     }
 }
 
-__global__ void create_partition_kernel(node_data_t *node_data, comm_data_t *comm_data, part_scan_data_t *part_scan_data, uint32_t *partition, int vertex_count, int comm_count) {
+__global__ void create_partition_kernel(
+    node_data_t *node_data,
+    comm_data_t *comm_data,
+    part_scan_data_t *part_scan_data,
+    uint32_t *partition,
+    int vertex_count,
+    int comm_count
+) {
     unsigned int node = threadIdx.x;
 
     uint32_t comm = node_data[node].community;
@@ -198,6 +217,30 @@ __global__ void create_partition_kernel(node_data_t *node_data, comm_data_t *com
     uint32_t comm_offset = atomicAdd(&(part_scan_data[comm].curr_node_idx), 1);
 
     partition[overall_offset + comm_offset] = node;
+}
+
+__global__ void refine_kernel(
+    uint32_t *offsets,
+    uint32_t *indices,
+    float *weights,
+    node_data_t *node_data,
+    int vertex_count,
+    int edge_count,
+    float gamma,
+    uint32_t *partition,
+    uint32_t *partition_offsets,
+    int partition_count
+) {
+    unsigned int part_idx = threadIdx.x;
+
+    uint32_t part_offset = partition_offsets[part_idx];
+    uint32_t part_offset_next = partition_offsets[part_idx + 1];
+
+    for (int i = part_offset; i < part_offset_next; i++) {
+        uint32_t node = partition[i];
+        // TODO: may need to mark that this node is a member of this partition, so that we can
+        // tell when we iterate the nodes
+    }
 }
 
 template <typename T>
@@ -287,6 +330,13 @@ extern "C" void move_nodes_fast(uint32_t *offsets, uint32_t *indices, float *wei
     part_scan_data_t *part_scan_data_device = allocate_and_copy_to_device(part_scan_data, comm_count);
 
     create_partition_kernel <<<dim_grid, dim_block>>> (node_data_device, comm_data_device, part_scan_data_device, partition_device, vertex_count, comm_count);
+    cudaDeviceSynchronize();
+
+    dim3 refine_dim_block(partition_count);
+
+    uint32_t *partition_offsets_device = allocate_and_copy_to_device(partition_offsets, partition_count);
+
+    refine_kernel <<<dim_grid, refine_dim_block>>> (offsets_device, indices_device, weights_device, node_data_device, vertex_count, edge_count, gamma, partition_device, partition_offsets_device, partition_count);
     cudaDeviceSynchronize();
 
     copy_from_device(partition, partition_device, vertex_count);
