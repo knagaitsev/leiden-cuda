@@ -456,7 +456,7 @@ __global__ void refine_kernel(
                 if (delta > best_delta) {
                     best_delta = delta;
                     best_comm = neighbor_comm;
-                    printf("Node: %d, Delta: %f, best_comm: %d\n", node, delta, best_comm);
+                    // printf("Node: %d, Delta: %f, best_comm: %d\n", node, delta, best_comm);
                 }
             }
         }
@@ -725,35 +725,44 @@ extern "C" void move_nodes_fast(
     );
     cudaDeviceSynchronize();
 
-    copy_from_device(refined_comm_in_edge_weights, refined_comm_in_edge_weights_device, vertex_count);
+    copy_from_device(node_refined_comms, node_refined_comms_device, vertex_count);
+    copy_from_device(refined_comm_agg_counts, refined_comm_agg_counts_device, vertex_count);
 
+    int refined_comm_count = 0;
     for (int i = 0; i < vertex_count; i++) {
-        printf("Refined comm in edge weight %d: %f\n", i, refined_comm_in_edge_weights[i]);
-    }
-
-    copy_from_device(r_len, r_len_device, partition_count);
-
-    copy_from_device(partition, partition_device, vertex_count);
-
-    printf("\n---- Partition count %d -----\n\n", partition_count);
-
-    for (int i = 0; i < partition_count; i++) {
-        printf("R len for partition %d: %d\n", i, r_len[i]);
-    }
-
-    printf("\n\n");
-
-    // for (int i = 0; i < vertex_count; i++) {
-    //     printf("Partition idx %d: %d\n", i, partition[i]);
-    // }
-
-    for (int i = 0; i < partition_count; i++) {
-        uint32_t part_start = partition_offsets[i];
-        uint32_t part_end = partition_offsets[i + 1];
-        for (int j = part_start; j < part_end; j++) {
-            printf("Partition %d: %d\n", i, partition[j]);
+        uint32_t agg_count = refined_comm_agg_counts[i];
+        if (agg_count > 0) {
+            refined_comm_count++;
         }
     }
+
+    printf("\nRefined comm count: %d\n", refined_comm_count);
+
+    // copy_from_device(refined_comm_in_edge_weights, refined_comm_in_edge_weights_device, vertex_count);
+
+    // for (int i = 0; i < vertex_count; i++) {
+    //     printf("Refined comm in edge weight %d: %f\n", i, refined_comm_in_edge_weights[i]);
+    // }
+
+    // copy_from_device(r_len, r_len_device, partition_count);
+
+    // copy_from_device(partition, partition_device, vertex_count);
+
+    // printf("\n---- Partition count %d -----\n\n", partition_count);
+
+    // for (int i = 0; i < partition_count; i++) {
+    //     printf("R len for partition %d: %d\n", i, r_len[i]);
+    // }
+
+    // printf("\n\n");
+
+    // for (int i = 0; i < partition_count; i++) {
+    //     uint32_t part_start = partition_offsets[i];
+    //     uint32_t part_end = partition_offsets[i + 1];
+    //     for (int j = part_start; j < part_end; j++) {
+    //         printf("Partition %d: %d\n", i, partition[j]);
+    //     }
+    // }
 
     copy_from_device(offsets, offsets_device, vertex_count + 1);
     copy_from_device(indices, indices_device, edge_count);

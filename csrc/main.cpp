@@ -72,7 +72,8 @@ offsets_indices_weights_t to_csr(edge_list_t edge_list) {
 }
 
 int main() {
-    std::ifstream file("validation/clique_ring.txt");
+    // std::ifstream file("validation/clique_ring.txt");
+    std::ifstream file("data/arenas-jazz/out.arenas-jazz");
 
     if (!file.is_open()) {
         std::cerr << "Failed to open file.\n";
