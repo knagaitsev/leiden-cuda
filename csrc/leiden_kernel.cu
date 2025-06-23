@@ -308,6 +308,48 @@ __global__ void refine_get_r_kernel(
     r_len[part_idx] = local_r_len;
 }
 
+// this parallelizes at the node level
+__global__ void set_initial_refined_comm_in_edge_weights_kernel(
+    uint32_t *offsets,
+    uint32_t *indices,
+    float *weights,
+    node_data_t *node_data,
+    int vertex_count,
+    int edge_count,
+    float gamma,
+    uint32_t *partition,
+    uint32_t *partition_offsets,
+    int partition_count,
+    uint32_t *node_part,
+    uint32_t *r_len,
+    uint32_t *r,
+    uint32_t *s_tots,
+    uint32_t *node_refined_comms,
+    float *refined_comm_in_edge_weights,
+    uint32_t *refined_comm_agg_counts
+) {
+    unsigned int node = threadIdx.x;
+    uint32_t comm = node_refined_comms[node];
+    uint32_t part = node_part[node];
+
+    uint32_t v_offset = offsets[node];
+    uint32_t v_offset_next = offsets[node + 1];
+
+    float tot_weight = 0.0f;
+
+    for (int j = v_offset; j < v_offset_next; j++) {
+        uint32_t neighbor = indices[j];
+        float weight = weights[j];
+        uint32_t neighbor_part = node_part[neighbor];
+
+        if (neighbor_part == part) {
+            tot_weight += weight;
+        }
+    }
+
+    refined_comm_in_edge_weights[comm] = tot_weight;
+}
+
 __global__ void refine_kernel(
     uint32_t *offsets,
     uint32_t *indices,
@@ -595,7 +637,7 @@ extern "C" void move_nodes_fast(
     );
     cudaDeviceSynchronize();
 
-    refine_kernel <<<dim_grid, refine_dim_block>>> (
+    set_initial_refined_comm_in_edge_weights_kernel <<<dim_grid, dim_block>>> (
         offsets_device,
         indices_device,
         weights_device,
@@ -615,6 +657,33 @@ extern "C" void move_nodes_fast(
         refined_comm_agg_counts_device
     );
     cudaDeviceSynchronize();
+
+    // refine_kernel <<<dim_grid, refine_dim_block>>> (
+    //     offsets_device,
+    //     indices_device,
+    //     weights_device,
+    //     node_data_device,
+    //     vertex_count,
+    //     edge_count,
+    //     gamma,
+    //     partition_device,
+    //     partition_offsets_device, 
+    //     partition_count,
+    //     node_part_device,
+    //     r_len_device,
+    //     r_device,
+    //     s_tots_device,
+    //     node_refined_comms_device,
+    //     refined_comm_in_edge_weights_device,
+    //     refined_comm_agg_counts_device
+    // );
+    // cudaDeviceSynchronize();
+
+    copy_from_device(refined_comm_in_edge_weights, refined_comm_in_edge_weights_device, vertex_count);
+
+    for (int i = 0; i < vertex_count; i++) {
+        printf("Refined comm in edge weight %d: %f\n", i, refined_comm_in_edge_weights[i]);
+    }
 
     copy_from_device(r_len, r_len_device, partition_count);
 
