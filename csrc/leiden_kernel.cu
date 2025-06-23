@@ -193,8 +193,8 @@ __global__ void move_nodes_fast_kernel(
 
         if (best_comm != curr_comm) {
             node_data[node].community = best_comm;
-            atomicAdd(&(comm_data[best_comm].agg_count), 1);
-            atomicAdd(&(comm_data[curr_comm].agg_count), -1);
+            atomicAdd(&(comm_data[best_comm].agg_count), node_agg_count);
+            atomicAdd(&(comm_data[curr_comm].agg_count), -node_agg_count);
 
             *changed = true;
         }
@@ -284,6 +284,12 @@ __global__ void refine_get_r_kernel(
 
         for (int j = v_offset; j < v_offset_next; j++) {
             uint32_t neighbor = indices[j];
+
+            // no self-edges allowed here
+            if (neighbor == node) {
+                continue;
+            }
+
             float weight = weights[j];
 
             uint32_t neighbor_part_idx = node_part[neighbor];
@@ -330,11 +336,39 @@ __global__ void refine_kernel(
     // this iterates over R (subset of nodes in the partition being refined that are "well-connected")
     for (int i = part_offset; i < part_offset + local_r_len; i++) {
         uint32_t node = r[i];
-        uint32_t node_comm = node_refined_comms[node];
+        uint32_t curr_comm = node_refined_comms[node];
+        float node_agg_count = node_data[i].agg_count;
+
+        uint32_t agg_count_old = refined_comm_agg_counts[curr_comm];
 
         bool is_in_singleton_community = true;
         uint32_t v_offset = offsets[node];
         uint32_t v_offset_next = offsets[node + 1];
+
+        for (int j = v_offset; j < v_offset_next; j++) {
+            uint32_t neighbor = indices[j];
+            uint32_t neighbor_comm = node_refined_comms[neighbor];
+            // TODO: could be smarter about checking if this node is in a singleton partition
+            if (curr_comm == neighbor_comm) {
+                is_in_singleton_community = false;
+                break;
+            }
+        }
+
+        if (!is_in_singleton_community) {
+            continue;
+        }
+
+        float k_vc_old = 0.0;
+        for (uint32_t j = v_offset; j < v_offset_next; j++) {
+            uint32_t neigh = indices[j];
+            if (node_refined_comms[neigh] == curr_comm) {
+                k_vc_old += weights[j];
+            }
+        }
+
+        uint32_t best_comm = curr_comm;
+        float best_delta = 0;
 
         // this iterates over the neighbors of the node we are currently looking at
         for (int j = v_offset; j < v_offset_next; j++) {
@@ -343,22 +377,28 @@ __global__ void refine_kernel(
 
             uint32_t neighbor_comm = node_refined_comms[neighbor];
 
-            // TODO: could be smarter about checking if this node is in a singleton partition
-            if (node_comm == neighbor_comm) {
-                is_in_singleton_community = false;
-                break;
-            }
-
             uint32_t c_tot = refined_comm_agg_counts[neighbor_comm];
             uint32_t c_in = refined_comm_in_edge_weights[neighbor_comm];
 
             if (c_in >= gamma * (float)(c_tot * (s_tot - c_tot))) {
+                float k_vc_new = 0.0;
+                for (uint32_t k = v_offset; k < v_offset_next; k++) {
+                    uint32_t neigh = indices[k];
+                    if (node_refined_comms[neigh] == neighbor_comm) {
+                        k_vc_new += weights[k];
+                    }
+                }
 
+                uint32_t agg_count_new = refined_comm_agg_counts[neighbor_comm];
+
+                float delta = (k_vc_new - gamma * (float)(node_agg_count * agg_count_new)) - (k_vc_old - gamma * (float)(node_agg_count * (agg_count_old - node_agg_count)));
+
+                if (delta > best_delta) {
+                    // printf("Node: %d, Delta: %f, best_comm: %d\n", node, delta, best_comm);
+                    best_delta = delta;
+                    best_comm = neighbor_comm;
+                }
             }
-        }
-
-        if (!is_in_singleton_community) {
-            continue;
         }
 
         // TODO: move node to best community
@@ -366,6 +406,24 @@ __global__ void refine_kernel(
         // uint32_t *node_refined_comms,
         // float *refined_comm_in_edge_weights,
         // uint32_t *refined_comm_agg_counts
+
+        if (best_comm != curr_comm) {
+            refined_comm_agg_counts[best_comm] += node_agg_count;
+            refined_comm_agg_counts[curr_comm] -= node_agg_count;
+
+            // TODO: refined_comm_in_edge_weights
+            // need to reduce the refined edge weight of best_comm by the amount of edge weight from nodes in best_comm
+            // to the new node, given that the new node will now be part of best_comm
+            // - we can simultaneously add the edge weight to nodes outside of best_comm (making sure to avoid including self-edge weight)
+            // and ensuring that the edge weight we are adding is to nodes within the current partition (skip if not)
+            
+            // IMPORTANT: this must happen after updating refined_comm_in_edge_weights
+            // because we do not want to involve self-edges in the above computation
+            node_refined_comms[node] = best_comm;
+
+            // atomicAdd(&(comm_data[best_comm].agg_count), 1);
+            // atomicAdd(&(comm_data[curr_comm].agg_count), -1);
+        }
     }
 }
 
@@ -436,6 +494,7 @@ extern "C" void move_nodes_fast(
 
     for (int i = 0; i < vertex_count; i++) {
         node_refined_comms[i] = i;
+        // TODO: refined_comm_in_edge_weights -- need to initialize this correctly
         refined_comm_in_edge_weights[i] = 0;
         // IMPORTANT: must make sure we get the agg count here from the node
         refined_comm_agg_counts[i] = node_data[i].agg_count;
