@@ -9,8 +9,12 @@ typedef struct node_data {
 
 typedef struct comm_data {
     uint32_t agg_count;
-    int lock;
 } comm_data_t;
+
+typedef struct part_scan_data {
+    uint32_t scanned_agg_count;
+    uint32_t curr_node_idx;
+} part_scan_data_t;
 
 __global__ void add_kernel(float* a, float* b, float* c, int N) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -104,14 +108,13 @@ __global__ void gather_move_candidates_kernel(uint32_t *offsets, uint32_t *indic
 
 // two approaches to doing move_nodes_fast: parallelizing at node level is below
 // - another option is parallelizing at edge level, letting each thread consider an edge
-__global__ void move_nodes_fast_kernel(uint32_t *offsets, uint32_t *indices, float *weights, node_data_t *node_data, comm_data_t *comm_data, int vertex_count, int edge_count, int comm_count, float gamma, bool *changed) {
-    while (true) {
-        unsigned int node = threadIdx.x;
-        
-        // communities[threadIdx.x] = 1;
-        uint32_t offset = offsets[node];
-        uint32_t offset_next = offsets[node + 1];
+__global__ void move_nodes_fast_kernel(uint32_t *offsets, uint32_t *indices, float *weights, node_data_t *node_data, comm_data_t *comm_data, int vertex_count, int edge_count, int comm_count, float gamma, bool *changed, uint32_t *partition) {
+    unsigned int node = threadIdx.x;
 
+    uint32_t offset = offsets[node];
+    uint32_t offset_next = offsets[node + 1];
+
+    while (true) {
         uint32_t curr_comm = node_data[node].community;
 
         uint32_t best_comm = curr_comm;
@@ -177,12 +180,24 @@ __global__ void move_nodes_fast_kernel(uint32_t *offsets, uint32_t *indices, flo
         // IMPORTANT: this currently assumes all the threads are in one block
         __syncthreads();
 
-        if (*changed) {
-            *changed = false;
-        } else {
+        if (!*changed) {
             break;
         }
+
+        __syncthreads();
+
+        *changed = false;
     }
+}
+
+__global__ void create_partition_kernel(node_data_t *node_data, comm_data_t *comm_data, part_scan_data_t *part_scan_data, uint32_t *partition, int vertex_count, int comm_count) {
+    unsigned int node = threadIdx.x;
+
+    uint32_t comm = node_data[node].community;
+    uint32_t overall_offset = part_scan_data[comm].scanned_agg_count;
+    uint32_t comm_offset = atomicAdd(&(part_scan_data[comm].curr_node_idx), 1);
+
+    partition[overall_offset + comm_offset] = node;
 }
 
 template <typename T>
@@ -197,7 +212,13 @@ T* allocate_and_copy_to_device(T* data_host, int len) {
 }
 
 template <typename T>
-T* copy_from_device(T* data_host, T* data_device, int len) {
+void copy_to_device(T* data_host, T* data_device, int len) {
+    int size = len * sizeof(T);
+    cudaMemcpy(data_device, data_host, size, cudaMemcpyHostToDevice);
+}
+
+template <typename T>
+void copy_from_device(T* data_host, T* data_device, int len) {
     int size = len * sizeof(T);
     cudaMemcpy(data_host, data_device, size, cudaMemcpyDeviceToHost);
 }
@@ -211,6 +232,7 @@ extern "C" void move_nodes_fast(uint32_t *offsets, uint32_t *indices, float *wei
     // - or should we reorder the data structure to ensure a warp coalesces global memory accesses?
 
     bool *changed = (bool *)malloc(sizeof(bool));
+    // cudaMemset((void *)binsDevice, 0, binsSize);
 
     uint32_t *offsets_device = allocate_and_copy_to_device(offsets, vertex_count + 1);
     uint32_t *indices_device = allocate_and_copy_to_device(indices, edge_count);
@@ -219,14 +241,69 @@ extern "C" void move_nodes_fast(uint32_t *offsets, uint32_t *indices, float *wei
     comm_data_t *comm_data_device = allocate_and_copy_to_device(comm_data, comm_count);
     bool *changed_device = allocate_and_copy_to_device(changed, 1);
 
+    uint32_t *partition = (uint32_t *)malloc(vertex_count * sizeof(uint32_t));
+    uint32_t *partition_device = allocate_and_copy_to_device(partition, vertex_count);
+
     dim3 dim_grid(1);
  	dim3 dim_block(vertex_count);
 
     // gather_move_candidates_kernel <<<dim_grid, dim_block>>> (offsets_device, indices_device, weights_device, node_data_device, comm_data_device, vertex_count, edge_count, comm_count, gamma);
 
-	move_nodes_fast_kernel <<<dim_grid, dim_block>>> (offsets_device, indices_device, weights_device, node_data_device, comm_data_device, vertex_count, edge_count, comm_count, gamma, changed_device);
-
+	move_nodes_fast_kernel <<<dim_grid, dim_block>>> (offsets_device, indices_device, weights_device, node_data_device, comm_data_device, vertex_count, edge_count, comm_count, gamma, changed_device, partition_device);
     cudaDeviceSynchronize();
+
+    copy_from_device(comm_data, comm_data_device, comm_count);
+
+    // TODO: we could use scan kernel here if it is a performance bottleneck, but for now
+    // we just do it on cpu
+    int partition_count = 0;
+    for (int i = 0; i < comm_count; i++) {
+        uint32_t agg_count = comm_data[i].agg_count;
+        if (agg_count > 0) {
+            partition_count++;
+        }
+    }
+
+    // TODO: we can get away with making this smaller, but it changes the indexing approach in the next kernel
+    part_scan_data_t *part_scan_data = (part_scan_data_t *)malloc(comm_count * sizeof(part_scan_data_t));
+
+    uint32_t *partition_offsets = (uint32_t *)malloc((partition_count + 1) * sizeof(uint32_t));
+
+    uint32_t scan_idx = 0;
+    partition_count = 0;
+    for (int i = 0; i < comm_count; i++) {
+        part_scan_data_t p = { .scanned_agg_count = scan_idx, .curr_node_idx = 0 };
+        part_scan_data[i] = p;
+
+        uint32_t agg_count = comm_data[i].agg_count;
+        if (agg_count > 0) {
+            partition_offsets[partition_count] = scan_idx;
+            partition_count++;
+            scan_idx += agg_count;
+        }
+    }
+    partition_offsets[partition_count] = scan_idx;
+
+    part_scan_data_t *part_scan_data_device = allocate_and_copy_to_device(part_scan_data, comm_count);
+
+    create_partition_kernel <<<dim_grid, dim_block>>> (node_data_device, comm_data_device, part_scan_data_device, partition_device, vertex_count, comm_count);
+    cudaDeviceSynchronize();
+
+    copy_from_device(partition, partition_device, vertex_count);
+
+    printf("\n---- Partition count %d -----\n\n", partition_count);
+
+    // for (int i = 0; i < vertex_count; i++) {
+    //     printf("Partition idx %d: %d\n", i, partition[i]);
+    // }
+
+    for (int i = 0; i < partition_count; i++) {
+        uint32_t part_start = partition_offsets[i];
+        uint32_t part_end = partition_offsets[i + 1];
+        for (int j = part_start; j < part_end; j++) {
+            printf("Partition %d: %d\n", i, partition[j]);
+        }
+    }
 
     copy_from_device(offsets, offsets_device, vertex_count + 1);
     copy_from_device(indices, indices_device, edge_count);
