@@ -9,6 +9,7 @@ typedef struct node_data {
 
 typedef struct comm_data {
     uint32_t agg_count;
+    int lock;
 } comm_data_t;
 
 __global__ void add_kernel(float* a, float* b, float* c, int N) {
@@ -97,13 +98,91 @@ __global__ void gather_move_candidates_kernel(uint32_t *offsets, uint32_t *indic
 
     if (best_comm != curr_comm) {
         node_data[node].move_candidate = best_comm;
+        // if (atomicCAS(&comm_data[best_comm]))
     }
 }
 
 // two approaches to doing move_nodes_fast: parallelizing at node level is below
 // - another option is parallelizing at edge level, letting each thread consider an edge
-__global__ void move_nodes_fast_kernel(uint32_t *offsets, uint32_t *indices, float *weights, node_data_t *node_data, comm_data_t *comm_data, int vertex_count, int edge_count, int comm_count, float gamma) {
-    
+__global__ void move_nodes_fast_kernel(uint32_t *offsets, uint32_t *indices, float *weights, node_data_t *node_data, comm_data_t *comm_data, int vertex_count, int edge_count, int comm_count, float gamma, bool *changed) {
+    while (true) {
+        unsigned int node = threadIdx.x;
+        
+        // communities[threadIdx.x] = 1;
+        uint32_t offset = offsets[node];
+        uint32_t offset_next = offsets[node + 1];
+
+        uint32_t curr_comm = node_data[node].community;
+
+        uint32_t best_comm = curr_comm;
+        float best_delta = 0.0f;
+
+        uint32_t node_edge_count = offset_next - offset;
+
+        // aggregate count of nodes in old community (including current node)
+        int agg_count_old = comm_data[curr_comm].agg_count;
+
+        // aggregate count of current node
+        int node_agg_count = node_data[node].agg_count;
+
+        // total edge weight of incoming edges from old community
+        float k_vc_old = 0.0;
+        for (uint32_t i = offset; i < offset_next; i++) {
+            uint32_t neigh = indices[i];
+            if (node_data[neigh].community == curr_comm) {
+                k_vc_old += weights[i];
+            }
+        }
+
+        for (uint32_t i = offset; i < offset_next; i++) {
+            uint32_t neighbor = indices[i];
+            float weight = weights[i];
+
+            uint32_t neighbor_comm = node_data[neighbor].community;
+
+            if (neighbor_comm == curr_comm || neighbor_comm == best_comm) {
+                continue;
+            }
+
+            // aggregate count of nodes in new community (excluding current node)
+            int agg_count_new = comm_data[neighbor_comm].agg_count;
+
+            // total edge weight of incoming edges from new community
+            float k_vc_new = 0.0;
+            // TODO: need to try moving this elsewhere
+            for (uint32_t j = offset; j < offset_next; j++) {
+                uint32_t neigh = indices[j];
+                if (node_data[neigh].community == neighbor_comm) {
+                    k_vc_new += weights[j];
+                }
+            }
+
+            float delta = (k_vc_new - gamma * (float)(node_agg_count * agg_count_new)) - (k_vc_old - gamma * (float)(node_agg_count * (agg_count_old - node_agg_count)));
+
+            if (delta > best_delta) {
+                // printf("Node: %d, Delta: %f, best_comm: %d\n", node, delta, best_comm);
+                best_delta = delta;
+                best_comm = neighbor_comm;
+            }
+        }
+
+        if (best_comm != curr_comm) {
+            node_data[node].community = best_comm;
+            atomicAdd(&(comm_data[best_comm].agg_count), 1);
+            atomicAdd(&(comm_data[curr_comm].agg_count), -1);
+
+            *changed = true;
+        }
+
+        // IMPORTANT: this currently assumes all the threads are in one block
+        __syncthreads();
+
+        if (*changed) {
+            *changed = false;
+        } else {
+            break;
+        }
+    }
 }
 
 template <typename T>
@@ -131,18 +210,21 @@ extern "C" void move_nodes_fast(uint32_t *offsets, uint32_t *indices, float *wei
     // will it be better to give them an array of random indices to access,
     // - or should we reorder the data structure to ensure a warp coalesces global memory accesses?
 
+    bool *changed = (bool *)malloc(sizeof(bool));
+
     uint32_t *offsets_device = allocate_and_copy_to_device(offsets, vertex_count + 1);
     uint32_t *indices_device = allocate_and_copy_to_device(indices, edge_count);
     float *weights_device = allocate_and_copy_to_device(weights, edge_count);
     node_data_t *node_data_device = allocate_and_copy_to_device(node_data, vertex_count);
     comm_data_t *comm_data_device = allocate_and_copy_to_device(comm_data, comm_count);
+    bool *changed_device = allocate_and_copy_to_device(changed, 1);
 
     dim3 dim_grid(1);
  	dim3 dim_block(vertex_count);
 
-    gather_move_candidates_kernel <<<dim_grid, dim_block>>> (offsets_device, indices_device, weights_device, node_data_device, comm_data_device, vertex_count, edge_count, comm_count, gamma);
+    // gather_move_candidates_kernel <<<dim_grid, dim_block>>> (offsets_device, indices_device, weights_device, node_data_device, comm_data_device, vertex_count, edge_count, comm_count, gamma);
 
-	// move_nodes_fast_kernel <<<dim_grid, dim_block>>> (offsets_device, indices_device, weights_device, node_data_device, comm_data_device, vertex_count, edge_count, comm_count, gamma);
+	move_nodes_fast_kernel <<<dim_grid, dim_block>>> (offsets_device, indices_device, weights_device, node_data_device, comm_data_device, vertex_count, edge_count, comm_count, gamma, changed_device);
 
     cudaDeviceSynchronize();
 

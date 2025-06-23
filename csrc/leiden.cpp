@@ -50,12 +50,13 @@ void leiden(std::vector<uint32_t> offsets, std::vector<uint32_t> indices, std::v
     std::cout << "\n";
 
     for (int i = 0; i < vertex_count; i++) {
-        std::cout << "Vertex " << i << " candidate: " << node_data[i].community << " -> " << node_data[i].move_candidate << "\n";
+        std::cout << "Vertex " << i << " community: " << node_data[i].community << "\n";
+        // std::cout << "Vertex " << i << " candidate: " << node_data[i].community << " -> " << node_data[i].move_candidate << "\n";
     }
 
-    std::cout << "\n";
+    // std::cout << "\n";
 
-    for (int i = 0; i < comm_count; i++) {
-        std::cout << "Community " << i << " agg count: " << comm_data[i].agg_count << "\n";
-    }
+    // for (int i = 0; i < comm_count; i++) {
+    //     std::cout << "Community " << i << " agg count: " << comm_data[i].agg_count << "\n";
+    // }
 }
