@@ -37,22 +37,28 @@ extern "C" void launch_add_kernel(float* a, float* b, float* c, int N) {
     cudaFree(d_a); cudaFree(d_b); cudaFree(d_c);
 }
 
-// parallelized at node level
-// - we should also try parallelizing at edge level
-__global__ void gather_move_candidates_kernel(
+// two approaches to doing move_nodes_fast: parallelizing at node level is below
+// - another option is parallelizing at edge level, letting each thread consider an edge
+__global__ void move_nodes_fast_kernel(
     uint32_t *offsets,
     uint32_t *indices,
     float *weights,
     node_data_t *node_data,
     comm_data_t *comm_data,
+    int *comm_locks,
     int vertex_count,
     int edge_count,
     int comm_count,
-    float gamma
+    float gamma,
+    bool *changed,
+    uint32_t *partition
 ) {
-    unsigned int node = threadIdx.x;
-    
-    // communities[threadIdx.x] = 1;
+    unsigned int node = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (node >= vertex_count) {
+        return;
+    }
+
     uint32_t offset = offsets[node];
     uint32_t offset_next = offsets[node + 1];
 
@@ -80,7 +86,7 @@ __global__ void gather_move_candidates_kernel(
 
     for (uint32_t i = offset; i < offset_next; i++) {
         uint32_t neighbor = indices[i];
-        float weight = weights[i];
+        // float weight = weights[i];
 
         uint32_t neighbor_comm = node_data[neighbor].community;
 
@@ -94,165 +100,39 @@ __global__ void gather_move_candidates_kernel(
         // total edge weight of incoming edges from new community
         float k_vc_new = 0.0;
         // TODO: need to try moving this elsewhere
-        for (uint32_t j = offset; j < offset_next; j++) {
-            uint32_t neigh = indices[j];
-            if (node_data[neigh].community == neighbor_comm) {
-                k_vc_new += weights[j];
-            }
-        }
+        // for (uint32_t j = offset; j < offset_next; j++) {
+        //     uint32_t neigh = indices[j];
+        //     // must include the self-edge here
+        //     if (node_data[neigh].community == neighbor_comm || neigh == node) {
+        //         k_vc_new += weights[j];
+        //     }
+        // }
 
         float delta = (k_vc_new - gamma * (float)(node_agg_count * agg_count_new)) - (k_vc_old - gamma * (float)(node_agg_count * (agg_count_old - node_agg_count)));
 
         if (delta > best_delta) {
-            // printf("Node: %d, Delta: %f, best_comm: %d\n", node, delta, best_comm);
             best_delta = delta;
             best_comm = neighbor_comm;
+            // printf("Node: %d, Delta: %f, best_comm: %d\n", node, delta, best_comm);
         }
+    }
+
+    uint32_t comm_lo = curr_comm;
+    uint32_t comm_hi = best_comm;
+    if (best_comm < curr_comm) {
+        comm_lo = best_comm;
+        comm_hi = curr_comm;
     }
 
     if (best_comm != curr_comm) {
-        node_data[node].move_candidate = best_comm;
-        // if (atomicCAS(&comm_data[best_comm]))
-    }
-}
+        if (atomicCAS(&(comm_locks[comm_lo]), 0, 1) == 0 && atomicCAS(&(comm_locks[comm_hi]), 0, 1) == 0) {
+            node_data[node].community = best_comm;
+            comm_data[best_comm].agg_count += node_agg_count;
+            comm_data[curr_comm].agg_count -= node_agg_count;
+            curr_comm = best_comm;
 
-// two approaches to doing move_nodes_fast: parallelizing at node level is below
-// - another option is parallelizing at edge level, letting each thread consider an edge
-__global__ void move_nodes_fast_kernel(
-    uint32_t *offsets,
-    uint32_t *indices,
-    float *weights,
-    node_data_t *node_data,
-    comm_data_t *comm_data,
-    int *comm_locks,
-    int vertex_count,
-    int edge_count,
-    int comm_count,
-    float gamma,
-    bool *changed,
-    uint32_t *partition
-) {
-    unsigned int node = threadIdx.x;
-
-    uint32_t offset = offsets[node];
-    uint32_t offset_next = offsets[node + 1];
-
-    while (true) {
-        uint32_t curr_comm = node_data[node].community;
-
-        uint32_t best_comm = curr_comm;
-        float best_delta = 0.0f;
-
-        uint32_t node_edge_count = offset_next - offset;
-
-        // aggregate count of nodes in old community (including current node)
-        int agg_count_old = comm_data[curr_comm].agg_count;
-
-        // aggregate count of current node
-        int node_agg_count = node_data[node].agg_count;
-
-        // total edge weight of incoming edges from old community
-        float k_vc_old = 0.0;
-        for (uint32_t i = offset; i < offset_next; i++) {
-            uint32_t neigh = indices[i];
-            if (node_data[neigh].community == curr_comm) {
-                k_vc_old += weights[i];
-            }
+            *changed = true;
         }
-
-        for (uint32_t i = offset; i < offset_next; i++) {
-            uint32_t neighbor = indices[i];
-            // float weight = weights[i];
-
-            uint32_t neighbor_comm = node_data[neighbor].community;
-
-            if (neighbor_comm == curr_comm || neighbor_comm == best_comm) {
-                continue;
-            }
-
-            // aggregate count of nodes in new community (excluding current node)
-            int agg_count_new = comm_data[neighbor_comm].agg_count;
-
-            // total edge weight of incoming edges from new community
-            float k_vc_new = 0.0;
-            // TODO: need to try moving this elsewhere
-            for (uint32_t j = offset; j < offset_next; j++) {
-                uint32_t neigh = indices[j];
-                // must include the self-edge here
-                if (node_data[neigh].community == neighbor_comm || neigh == node) {
-                    k_vc_new += weights[j];
-                }
-            }
-
-            float delta = (k_vc_new - gamma * (float)(node_agg_count * agg_count_new)) - (k_vc_old - gamma * (float)(node_agg_count * (agg_count_old - node_agg_count)));
-
-            if (delta > best_delta) {
-                best_delta = delta;
-                best_comm = neighbor_comm;
-                // printf("Node: %d, Delta: %f, best_comm: %d\n", node, delta, best_comm);
-            }
-        }
-
-        uint32_t comm_lo = curr_comm;
-        uint32_t comm_hi = best_comm;
-        if (best_comm < curr_comm) {
-            comm_lo = best_comm;
-            comm_hi = curr_comm;
-        }
-
-        int got_first = 0;
-
-        if (best_comm != curr_comm) {
-            got_first = atomicCAS(&(comm_locks[comm_lo]), 0, 1) == 0;
-        }
-
-        __syncthreads();
-
-        if (best_comm != curr_comm && got_first) {
-            if (atomicCAS(&(comm_locks[comm_hi]), 0, 1) == 0) {
-                node_data[node].community = best_comm;
-                comm_data[best_comm].agg_count += node_agg_count;
-                comm_data[curr_comm].agg_count -= node_agg_count;
-                curr_comm = best_comm;
-
-                *changed = true;
-            } else {
-                // comm_locks[comm_lo] = 0;
-            }
-        }
-
-        ///////////////// - we could also attempt to lock comm_hi then comm_lo in reverse order here,
-        // maybe it would resolve some conflicts that happened in the previous step?
-        // got_first = 0;
-
-        // __syncthreads();
-
-        // if (best_comm != curr_comm) {
-        //     got_first = atomicCAS(&(comm_locks[comm_lo]), 0, 1) == 0;
-        // }
-        /////////////////
-
-        // if (best_comm != curr_comm) {
-        //     node_data[node].community = best_comm;
-
-        //     atomicAdd(&(comm_data[best_comm].agg_count), node_agg_count);
-        //     atomicAdd(&(comm_data[curr_comm].agg_count), -node_agg_count);
-        //     *changed = true;
-        // }
-
-        // IMPORTANT: this currently assumes all the threads are in one block
-        __syncthreads();
-
-        if (!*changed) {
-            break;
-        }
-
-        comm_locks[curr_comm] = 0;
-        comm_locks[best_comm] = 0;
-
-        __syncthreads();
-
-        *changed = false;
     }
 }
 
@@ -584,8 +464,10 @@ void copy_from_device(T* data_host, T* data_device, int len) {
 
 void checkCudaError() {
     cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess)
+    if (err != cudaSuccess) {
         printf("Error: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
 }
 
 extern "C" void move_nodes_fast(
@@ -649,33 +531,60 @@ extern "C" void move_nodes_fast(
     float *refined_comm_in_edge_weights_device = allocate_and_copy_to_device(refined_comm_in_edge_weights, vertex_count);
     uint32_t *refined_comm_agg_counts_device = allocate_and_copy_to_device(refined_comm_agg_counts, vertex_count);
 
-    dim3 dim_grid(1);
- 	dim3 dim_block(vertex_count);
-
     printf("move_nodes_fast starting, checking for CUDA error...\n");
-
     checkCudaError();
 
-    // gather_move_candidates_kernel <<<dim_grid, dim_block>>> (offsets_device, indices_device, weights_device, node_data_device, comm_data_device, vertex_count, edge_count, comm_count, gamma);
+    int block_size = 1024;
 
-	move_nodes_fast_kernel <<<dim_grid, dim_block>>> (
-        offsets_device,
-        indices_device,
-        weights_device,
-        node_data_device,
-        comm_data_device,
-        comm_locks_device,
-        vertex_count,
-        edge_count,
-        comm_count,
-        gamma,
-        changed_device,
-        partition_device
-    );
-    cudaDeviceSynchronize();
+    // int grid_size = vertex_count / block_size;
+    // if (vertex_count % block_size != 0) {
+    //     grid_size += 1;
+    // }
+    int grid_size = 1;
+
+    printf("Vertex count: %d, Block size: %d, grid size: %d\n", vertex_count, block_size, grid_size);
+
+    dim3 dim_grid(grid_size);
+ 	dim3 dim_block(block_size);
+
+    int move_nodes_fast_iter = 0;
+
+    while (true) {
+        move_nodes_fast_kernel <<<dim_grid, dim_block>>> (
+            offsets_device,
+            indices_device,
+            weights_device,
+            node_data_device,
+            comm_data_device,
+            comm_locks_device,
+            vertex_count,
+            edge_count,
+            comm_count,
+            gamma,
+            changed_device,
+            partition_device
+        );
+        cudaDeviceSynchronize();
+
+        copy_from_device(changed, changed_device, 1);
+
+        if (!*changed) {
+            break;
+        }
+
+        // reset changed
+        cudaMemset((void *)changed_device, 0, sizeof(bool));
+
+        // reset comm locks before next iteration
+        int comm_locks_size = comm_count * sizeof(int);
+        cudaMemset((void *)comm_locks_device, 0, comm_locks_size);
+
+        move_nodes_fast_iter++;
+
+        printf("Move nodes fast iter: %d\n", move_nodes_fast_iter);
+    }
 
     printf("move_nodes_fast complete, checking for CUDA error...\n");
-
     checkCudaError();
 
     copy_from_device(comm_data, comm_data_device, comm_count);
@@ -691,6 +600,8 @@ extern "C" void move_nodes_fast(
     }
 
     printf("\nPartition count after move_nodes_fast: %d\n", partition_count);
+
+    return;
 
     // TODO: we can get away with making this smaller, but it changes the indexing approach in the next kernel
     part_scan_data_t *part_scan_data = (part_scan_data_t *)malloc(comm_count * sizeof(part_scan_data_t));
