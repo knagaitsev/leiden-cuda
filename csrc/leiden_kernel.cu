@@ -192,29 +192,52 @@ __global__ void move_nodes_fast_kernel(
             }
         }
 
-        if (best_comm != curr_comm) {
-            // uint32_t comm_lo = curr_comm;
-            // uint32_t comm_hi = best_comm;
-            // if (best_comm < curr_comm) {
-            //     comm_lo = best_comm;
-            //     comm_hi = curr_comm;
-            // }
-            
-            // if (atomicCAS(&(comm_locks[comm_lo]), 0, 1) == 0 && atomicCAS(&(comm_locks[comm_hi]), 0, 1) == 0) {
-            //     node_data[node].community = best_comm;
-            //     comm_data[best_comm].agg_count += node_agg_count;
-            //     comm_data[curr_comm].agg_count -= node_agg_count;
-
-            //     *changed = true;
-            // }
-
-            node_data[node].community = best_comm;
-
-            atomicAdd(&(comm_data[best_comm].agg_count), node_agg_count);
-            atomicAdd(&(comm_data[curr_comm].agg_count), -node_agg_count);
-
-            *changed = true;
+        uint32_t comm_lo = curr_comm;
+        uint32_t comm_hi = best_comm;
+        if (best_comm < curr_comm) {
+            comm_lo = best_comm;
+            comm_hi = curr_comm;
         }
+
+        int got_first = 0;
+
+        if (best_comm != curr_comm) {
+            got_first = atomicCAS(&(comm_locks[comm_lo]), 0, 1) == 0;
+        }
+
+        __syncthreads();
+
+        if (best_comm != curr_comm && got_first) {
+            if (atomicCAS(&(comm_locks[comm_hi]), 0, 1) == 0) {
+                node_data[node].community = best_comm;
+                comm_data[best_comm].agg_count += node_agg_count;
+                comm_data[curr_comm].agg_count -= node_agg_count;
+                curr_comm = best_comm;
+
+                *changed = true;
+            } else {
+                // comm_locks[comm_lo] = 0;
+            }
+        }
+
+        ///////////////// - we could also attempt to lock comm_hi then comm_lo in reverse order here,
+        // maybe it would resolve some conflicts that happened in the previous step?
+        // got_first = 0;
+
+        // __syncthreads();
+
+        // if (best_comm != curr_comm) {
+        //     got_first = atomicCAS(&(comm_locks[comm_lo]), 0, 1) == 0;
+        // }
+        /////////////////
+
+        // if (best_comm != curr_comm) {
+        //     node_data[node].community = best_comm;
+
+        //     atomicAdd(&(comm_data[best_comm].agg_count), node_agg_count);
+        //     atomicAdd(&(comm_data[curr_comm].agg_count), -node_agg_count);
+        //     *changed = true;
+        // }
 
         // IMPORTANT: this currently assumes all the threads are in one block
         __syncthreads();
@@ -223,13 +246,12 @@ __global__ void move_nodes_fast_kernel(
             break;
         }
 
-        // comm_locks[curr_comm] = 0;
-        // comm_locks[best_comm] = 0;
+        comm_locks[curr_comm] = 0;
+        comm_locks[best_comm] = 0;
 
         __syncthreads();
 
         *changed = false;
-        break;
     }
 }
 

@@ -1,7 +1,7 @@
 import time
 # import community as community_louvain
 import networkx as nx
-# from networkx.algorithms.community import louvain_communities, leiden_communities
+from networkx.algorithms.community import louvain_communities, leiden_communities
 import matplotlib.pyplot as plt
 import sys
 import os
@@ -31,8 +31,6 @@ G = nx.read_edgelist(curr_path / "../data/flickr-groupmemberships/out.flickr-gro
 print("Number of vertices:", G.number_of_nodes())
 print("Number of edges:", G.number_of_edges())
 
-exit()
-
 has_self_loops = any(G.has_edge(n, n) for n in G.nodes())
 
 print(f"Has self loops: {has_self_loops}")
@@ -40,10 +38,10 @@ print(f"Has self loops: {has_self_loops}")
 # Compute communities using the Louvain method
 start = time.time()
 
-# communities = leiden_communities(G, seed=42, resolution=1, backend="cugraph")
+communities = leiden_communities(G, seed=42, resolution=1, backend="cugraph")
 # communities = louvain_communities(G, seed=42, resolution=1, backend="cugraph")
 # communities = custom_louvain(G)
-communities = custom_leiden(G, gamma=0.05, max_iter=0)
+# communities = custom_leiden(G, gamma=0.05, max_iter=0)
 
 # communities = louvain_communities(G, seed=42, resolution=1, backend="parallel")
 end = time.time()
@@ -51,6 +49,9 @@ end = time.time()
 print(f"Runtime: {end - start:.4f} seconds")
 
 print(f"Community count: {len(communities)}")
+
+exit(0)
+
 # Print the communities
 for i, community in enumerate(communities):
     print(f"Community {i+1}: {sorted(community)}")
