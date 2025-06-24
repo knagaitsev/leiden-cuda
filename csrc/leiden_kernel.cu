@@ -686,7 +686,10 @@ extern "C" void move_nodes_fast(
 
         move_nodes_fast_iter++;
 
-        // printf("Move nodes fast iter: %d\n", move_nodes_fast_iter);
+        printf("Move nodes fast iter: %d\n", move_nodes_fast_iter);
+        // if (move_nodes_fast_iter == 10) {
+        //     break;
+        // }
     }
 
     printf("move_nodes_fast complete, checking for CUDA error...\n");

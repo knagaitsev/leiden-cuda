@@ -12,7 +12,8 @@ from scipy.sparse import coo_matrix
 curr_path = Path(os.path.realpath(os.path.dirname(__file__)))
 
 # G_nx = nx.karate_club_graph()
-G_nx = nx.read_edgelist(curr_path / "../data/flickr-groupmemberships/out.flickr-groupmemberships", comments="%")
+# G_nx = nx.read_edgelist(curr_path / "../data/flickr-groupmemberships/out.flickr-groupmemberships", comments="%")
+G_nx = nx.read_edgelist(curr_path / "../data/wikipedia_link_mi/out.wikipedia_link_mi", comments="%")
 
 coo = nx.to_scipy_sparse_array(G_nx, format='coo')
 
