@@ -16,7 +16,7 @@ typedef struct part_scan_data {
     uint32_t curr_node_idx;
 } part_scan_data_t;
 
-extern "C" void move_nodes_fast(
+void move_nodes_fast(
     uint32_t *offsets,
     uint32_t *indices,
     float *weights,

@@ -527,7 +527,7 @@ void checkCudaError() {
     }
 }
 
-extern "C" void move_nodes_fast(
+void move_nodes_fast(
     uint32_t *offsets,
     uint32_t *indices,
     float *weights,
