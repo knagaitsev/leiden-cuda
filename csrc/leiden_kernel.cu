@@ -162,7 +162,7 @@ __global__ void move_nodes_fast_kernel(
 
         for (uint32_t i = offset; i < offset_next; i++) {
             uint32_t neighbor = indices[i];
-            float weight = weights[i];
+            // float weight = weights[i];
 
             uint32_t neighbor_comm = node_data[neighbor].community;
 
@@ -178,7 +178,8 @@ __global__ void move_nodes_fast_kernel(
             // TODO: need to try moving this elsewhere
             for (uint32_t j = offset; j < offset_next; j++) {
                 uint32_t neigh = indices[j];
-                if (node_data[neigh].community == neighbor_comm) {
+                // must include the self-edge here
+                if (node_data[neigh].community == neighbor_comm || neigh == node) {
                     k_vc_new += weights[j];
                 }
             }
@@ -186,9 +187,9 @@ __global__ void move_nodes_fast_kernel(
             float delta = (k_vc_new - gamma * (float)(node_agg_count * agg_count_new)) - (k_vc_old - gamma * (float)(node_agg_count * (agg_count_old - node_agg_count)));
 
             if (delta > best_delta) {
-                // printf("Node: %d, Delta: %f, best_comm: %d\n", node, delta, best_comm);
                 best_delta = delta;
                 best_comm = neighbor_comm;
+                // printf("Node: %d, Delta: %f, best_comm: %d\n", node, delta, best_comm);
             }
         }
 
@@ -581,6 +582,12 @@ void copy_from_device(T* data_host, T* data_device, int len) {
     cudaMemcpy(data_host, data_device, size, cudaMemcpyDeviceToHost);
 }
 
+void checkCudaError() {
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+        printf("Error: %s\n", cudaGetErrorString(err));
+}
+
 extern "C" void move_nodes_fast(
     uint32_t *offsets,
     uint32_t *indices,
@@ -645,6 +652,10 @@ extern "C" void move_nodes_fast(
     dim3 dim_grid(1);
  	dim3 dim_block(vertex_count);
 
+    printf("move_nodes_fast starting, checking for CUDA error...\n");
+
+    checkCudaError();
+
     // gather_move_candidates_kernel <<<dim_grid, dim_block>>> (offsets_device, indices_device, weights_device, node_data_device, comm_data_device, vertex_count, edge_count, comm_count, gamma);
 
 	move_nodes_fast_kernel <<<dim_grid, dim_block>>> (
@@ -662,6 +673,10 @@ extern "C" void move_nodes_fast(
         partition_device
     );
     cudaDeviceSynchronize();
+
+    printf("move_nodes_fast complete, checking for CUDA error...\n");
+
+    checkCudaError();
 
     copy_from_device(comm_data, comm_data_device, comm_count);
 
