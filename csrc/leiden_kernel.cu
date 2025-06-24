@@ -3,7 +3,6 @@
 
 typedef struct node_data {
     uint32_t community;
-    uint32_t move_candidate;
     uint32_t agg_count;
 } node_data_t;
 
@@ -43,6 +42,7 @@ __global__ void move_nodes_fast_kernel(
     uint32_t *offsets,
     uint32_t *indices,
     float *weights,
+    float *node_to_comm_weights,
     node_data_t *node_data,
     comm_data_t *comm_data,
     int *comm_locks,
@@ -51,7 +51,8 @@ __global__ void move_nodes_fast_kernel(
     int comm_count,
     float gamma,
     bool *changed,
-    uint32_t *partition
+    uint32_t *partition,
+    uint32_t *node_moves
 ) {
     unsigned int node = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -100,13 +101,13 @@ __global__ void move_nodes_fast_kernel(
         // total edge weight of incoming edges from new community
         float k_vc_new = 0.0;
         // TODO: need to try moving this elsewhere
-        // for (uint32_t j = offset; j < offset_next; j++) {
-        //     uint32_t neigh = indices[j];
-        //     // must include the self-edge here
-        //     if (node_data[neigh].community == neighbor_comm || neigh == node) {
-        //         k_vc_new += weights[j];
-        //     }
-        // }
+        for (uint32_t j = offset; j < offset_next; j++) {
+            uint32_t neigh = indices[j];
+            // must include the self-edge here
+            if (node_data[neigh].community == neighbor_comm || neigh == node) {
+                k_vc_new += weights[j];
+            }
+        }
 
         float delta = (k_vc_new - gamma * (float)(node_agg_count * agg_count_new)) - (k_vc_old - gamma * (float)(node_agg_count * (agg_count_old - node_agg_count)));
 
@@ -126,12 +127,81 @@ __global__ void move_nodes_fast_kernel(
 
     if (best_comm != curr_comm) {
         if (atomicCAS(&(comm_locks[comm_lo]), 0, 1) == 0 && atomicCAS(&(comm_locks[comm_hi]), 0, 1) == 0) {
-            node_data[node].community = best_comm;
-            comm_data[best_comm].agg_count += node_agg_count;
-            comm_data[curr_comm].agg_count -= node_agg_count;
-            curr_comm = best_comm;
+            // node_data[node].community = best_comm;
+            // comm_data[best_comm].agg_count += node_agg_count;
+            // comm_data[curr_comm].agg_count -= node_agg_count;
+            node_moves[node] = best_comm;
 
             *changed = true;
+        }
+    }
+}
+
+__global__ void apply_node_moves_kernel(
+    uint32_t *offsets,
+    uint32_t *indices,
+    float *weights,
+    float *node_to_comm_weights,
+    node_data_t *node_data,
+    comm_data_t *comm_data,
+    int *comm_locks,
+    int vertex_count,
+    int edge_count,
+    int comm_count,
+    float gamma,
+    bool *changed,
+    uint32_t *partition,
+    uint32_t *node_moves
+) {
+    unsigned int node = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (node >= vertex_count) {
+        return;
+    }
+    uint32_t curr_comm = node_data[node].community;
+    int node_agg_count = node_data[node].agg_count;
+
+    uint32_t best_comm = node_moves[node];
+
+    if (best_comm != curr_comm) {
+        node_data[node].community = best_comm;
+        comm_data[best_comm].agg_count += node_agg_count;
+        comm_data[curr_comm].agg_count -= node_agg_count;
+    }
+}
+
+// here we find every node that has a neighbor who changed their community, and we update the node_to_comm_weights of this node according
+// to the other nodes community change
+__global__ void update_node_to_comm_weights_kernel(
+    uint32_t *offsets,
+    uint32_t *indices,
+    float *weights,
+    float *node_to_comm_weights,
+    node_data_t *node_data,
+    comm_data_t *comm_data,
+    int *comm_locks,
+    int vertex_count,
+    int edge_count,
+    int comm_count,
+    float gamma,
+    bool *changed,
+    uint32_t *partition,
+    uint32_t *orig_node_comms
+) {
+    unsigned int node = blockIdx.x * blockDim.x + threadIdx.x;
+
+    uint32_t offset = offsets[node];
+    uint32_t offset_next = offsets[node + 1];
+
+    for (uint32_t i = offset; i < offset_next; i++) {
+        uint32_t neighbor = indices[i];
+        float weight = weights[i];
+
+        uint32_t prev_comm = orig_node_comms[neighbor];
+        uint32_t curr_comm = node_data[neighbor].community;
+
+        if (prev_comm != curr_comm) {
+
         }
     }
 }
@@ -497,13 +567,29 @@ extern "C" void move_nodes_fast(
         comm_locks[i] = 0;
     }
 
+    // TODO: improve this and make sure it is initialized correctly on subsequent iterations
+    uint32_t *orig_node_comms = (uint32_t *)malloc(vertex_count * sizeof(uint32_t));
+    for (int i = 0; i < vertex_count; i++) {
+        orig_node_comms[i] = node_data[i].community;
+    }
+
+    uint32_t *node_moves = (uint32_t *)malloc(vertex_count * sizeof(uint32_t));
+
+    for (int i = 0; i < vertex_count; i++) {
+        node_moves[i] = node_data[i].community;
+    }
+
+    uint32_t *node_moves_device = allocate_and_copy_to_device(node_moves, vertex_count);
+
     uint32_t *offsets_device = allocate_and_copy_to_device(offsets, vertex_count + 1);
     uint32_t *indices_device = allocate_and_copy_to_device(indices, edge_count);
     float *weights_device = allocate_and_copy_to_device(weights, edge_count);
+    float *node_to_comm_weights_device = allocate_and_copy_to_device(weights, edge_count);
     int *comm_locks_device = allocate_and_copy_to_device(comm_locks, comm_count);
     node_data_t *node_data_device = allocate_and_copy_to_device(node_data, vertex_count);
     comm_data_t *comm_data_device = allocate_and_copy_to_device(comm_data, comm_count);
     bool *changed_device = allocate_and_copy_to_device(changed, 1);
+    uint32_t *orig_node_comms_device = allocate_and_copy_to_device(orig_node_comms, vertex_count);
 
     uint32_t *partition = (uint32_t *)malloc(vertex_count * sizeof(uint32_t));
     uint32_t *partition_device = allocate_and_copy_to_device(partition, vertex_count);
@@ -536,11 +622,10 @@ extern "C" void move_nodes_fast(
 
     int block_size = 1024;
 
-    // int grid_size = vertex_count / block_size;
-    // if (vertex_count % block_size != 0) {
-    //     grid_size += 1;
-    // }
-    int grid_size = 1;
+    int grid_size = vertex_count / block_size;
+    if (vertex_count % block_size != 0) {
+        grid_size += 1;
+    }
 
     printf("Vertex count: %d, Block size: %d, grid size: %d\n", vertex_count, block_size, grid_size);
 
@@ -554,6 +639,7 @@ extern "C" void move_nodes_fast(
             offsets_device,
             indices_device,
             weights_device,
+            node_to_comm_weights_device,
             node_data_device,
             comm_data_device,
             comm_locks_device,
@@ -562,7 +648,8 @@ extern "C" void move_nodes_fast(
             comm_count,
             gamma,
             changed_device,
-            partition_device
+            partition_device,
+            node_moves_device
         );
         cudaDeviceSynchronize();
 
@@ -571,6 +658,24 @@ extern "C" void move_nodes_fast(
         if (!*changed) {
             break;
         }
+
+        apply_node_moves_kernel <<<dim_grid, dim_block>>> (
+            offsets_device,
+            indices_device,
+            weights_device,
+            node_to_comm_weights_device,
+            node_data_device,
+            comm_data_device,
+            comm_locks_device,
+            vertex_count,
+            edge_count,
+            comm_count,
+            gamma,
+            changed_device,
+            partition_device,
+            node_moves_device
+        );
+        cudaDeviceSynchronize();
 
         // reset changed
         cudaMemset((void *)changed_device, 0, sizeof(bool));
@@ -581,7 +686,7 @@ extern "C" void move_nodes_fast(
 
         move_nodes_fast_iter++;
 
-        printf("Move nodes fast iter: %d\n", move_nodes_fast_iter);
+        // printf("Move nodes fast iter: %d\n", move_nodes_fast_iter);
     }
 
     printf("move_nodes_fast complete, checking for CUDA error...\n");
@@ -595,6 +700,7 @@ extern "C" void move_nodes_fast(
     for (int i = 0; i < comm_count; i++) {
         uint32_t agg_count = comm_data[i].agg_count;
         if (agg_count > 0) {
+            // printf("Partition %u count: %u\n", i, agg_count);
             partition_count++;
         }
     }

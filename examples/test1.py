@@ -19,14 +19,20 @@ curr_path = Path(os.path.realpath(os.path.dirname(__file__)))
 
 # Create a graph
 # G = nx.karate_club_graph()
-G = nx.read_edgelist(curr_path / "../data/flickr-groupmemberships/out.flickr-groupmemberships", comments="%")
-# G = nx.read_edgelist(curr_path / "../data/arenas-jazz/out.arenas-jazz", comments="%")
+# G = nx.read_edgelist(curr_path / "../data/flickr-groupmemberships/out.flickr-groupmemberships", comments="%")
+G = nx.read_edgelist(curr_path / "../data/arenas-jazz/out.arenas-jazz", comments="%")
 
 # data_path = Path.resolve(curr_path / "../validation/clique_ring.txt")
 # G = nx.read_edgelist(data_path, nodetype=int)
 
 # data_path = Path.resolve(curr_path / "../validation/clique_ring_weighted.txt")
 # G = nx.read_weighted_edgelist(data_path, nodetype=int)
+
+top_10 = sorted(G.degree, key=lambda x: x[1], reverse=True)[:10]
+
+# Print the top 10
+for node, degree in top_10:
+    print(f"Node {node} has degree {degree}")
 
 print("Number of vertices:", G.number_of_nodes())
 print("Number of edges:", G.number_of_edges())

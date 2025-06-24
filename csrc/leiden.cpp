@@ -8,7 +8,6 @@
 
 typedef struct node_data {
     uint32_t community;
-    uint32_t move_candidate;
     uint32_t agg_count;
 } node_data_t;
 
@@ -29,7 +28,7 @@ void leiden(std::vector<uint32_t> offsets, std::vector<uint32_t> indices, std::v
     std::vector<comm_data_t> comm_data;
 
     for (uint32_t i = 0; i < vertex_count; i++) {
-        node_data_t node = { .community = i, .move_candidate = i, .agg_count = 1 };
+        node_data_t node = { .community = i, .agg_count = 1 };
         node_data.push_back(node);
 
         comm_data_t comm = { .agg_count = 1 };
