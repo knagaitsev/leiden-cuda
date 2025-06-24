@@ -1,0 +1,11 @@
+Log of correctness and optimizations:
+
+- Got initial correctness working for one iteration of greedy node movement and refinement of small graphs
+    - note that there was no atomic protection during greedy movement at this point, meaning some moves were not strictly better, but it still gives decent initial partitions on small graphs
+    - greedy node movement parallelized at node level, refinement parallelized at partition level
+    - only works for small graphs, due to certain synchronizations assuming only one thread block
+- Add atomic protection during greedy movement
+    - a candidate node move does a try-lock on both of the communities involved in the movement, and completes the node movement if both of these try-lock attempts succeed
+    - a node move does the try-lock sequence in ascending order of community IDs, guaranteeing that at least one of the candidate node moves will happen at the current greedy movement step
+- Adjust greedy movement to enable multiple thread blocks, moving the while loop out of the kernel and doing the while-loop logic on CPU
+    - greedy movement still takes forever on large graphs, as there is currently a 2D nested loop in which a node iterates over all of its neighbors in both loops
