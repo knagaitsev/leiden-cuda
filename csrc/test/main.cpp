@@ -1,4 +1,5 @@
 #include "leiden/leiden.hpp"
+#include "leiden/test/stopwatch_linux.hpp"
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -184,7 +185,15 @@ int main() {
     std::cout << "Indices size: " << indices.size() << "\n";
     std::cout << "Weights size: " << weights.size() << "\n";
 
+    auto stopwatch = StopWatchLinux();
+    stopwatch.start();
     leiden(offsets, indices, weights);
+    stopwatch.stop();
+
+    auto time_ms = stopwatch.getTime();
+    auto time_s = time_ms / 1000;
+
+    std::cout << "Runtime: " << time_s << "s\n";
 
     // int N = 1024;
     // float *a = new float[N];

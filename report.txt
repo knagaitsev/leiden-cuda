@@ -9,3 +9,9 @@ Log of correctness and optimizations:
     - a node move does the try-lock sequence in ascending order of community IDs, guaranteeing that at least one of the candidate node moves will happen at the current greedy movement step
 - Adjust greedy movement to enable multiple thread blocks, moving the while loop out of the kernel and doing the while-loop logic on CPU
     - greedy movement still takes forever on large graphs, as there is currently a 2D nested loop in which a node iterates over all of its neighbors in both loops
+
+
+Results for wikipedia_link_mi graph:
+
+1. Runtime for 10 iterations of greedy move_nodes_fast 92.6771s (naive approach with 2d nested loops over all edges of a node in each loop)
+2. 

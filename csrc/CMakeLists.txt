@@ -25,6 +25,7 @@ set_target_properties(myleiden PROPERTIES
 add_executable(leiden_test
     src/leiden_kernel.cu
     src/leiden.cpp
+    test/stopwatch_linux.cpp
     test/main.cpp
 )
 
