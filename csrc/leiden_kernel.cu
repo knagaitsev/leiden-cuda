@@ -124,6 +124,7 @@ __global__ void move_nodes_fast_kernel(
     float *weights,
     node_data_t *node_data,
     comm_data_t *comm_data,
+    int *comm_locks,
     int vertex_count,
     int edge_count,
     int comm_count,
@@ -192,7 +193,23 @@ __global__ void move_nodes_fast_kernel(
         }
 
         if (best_comm != curr_comm) {
+            // uint32_t comm_lo = curr_comm;
+            // uint32_t comm_hi = best_comm;
+            // if (best_comm < curr_comm) {
+            //     comm_lo = best_comm;
+            //     comm_hi = curr_comm;
+            // }
+            
+            // if (atomicCAS(&(comm_locks[comm_lo]), 0, 1) == 0 && atomicCAS(&(comm_locks[comm_hi]), 0, 1) == 0) {
+            //     node_data[node].community = best_comm;
+            //     comm_data[best_comm].agg_count += node_agg_count;
+            //     comm_data[curr_comm].agg_count -= node_agg_count;
+
+            //     *changed = true;
+            // }
+
             node_data[node].community = best_comm;
+
             atomicAdd(&(comm_data[best_comm].agg_count), node_agg_count);
             atomicAdd(&(comm_data[curr_comm].agg_count), -node_agg_count);
 
@@ -200,15 +217,18 @@ __global__ void move_nodes_fast_kernel(
         }
 
         // IMPORTANT: this currently assumes all the threads are in one block
-        // __syncthreads();
+        __syncthreads();
 
-        // if (!*changed) {
-        //     break;
-        // }
+        if (!*changed) {
+            break;
+        }
 
-        // __syncthreads();
+        // comm_locks[curr_comm] = 0;
+        // comm_locks[best_comm] = 0;
 
-        // *changed = false;
+        __syncthreads();
+
+        *changed = false;
         break;
     }
 }
@@ -560,9 +580,16 @@ extern "C" void move_nodes_fast(
     bool *changed = (bool *)malloc(sizeof(bool));
     // cudaMemset((void *)binsDevice, 0, binsSize);
 
+    int *comm_locks = (int *)malloc(comm_count * sizeof(int));
+
+    for (int i = 0; i < comm_count; i++) {
+        comm_locks[i] = 0;
+    }
+
     uint32_t *offsets_device = allocate_and_copy_to_device(offsets, vertex_count + 1);
     uint32_t *indices_device = allocate_and_copy_to_device(indices, edge_count);
     float *weights_device = allocate_and_copy_to_device(weights, edge_count);
+    int *comm_locks_device = allocate_and_copy_to_device(comm_locks, comm_count);
     node_data_t *node_data_device = allocate_and_copy_to_device(node_data, vertex_count);
     comm_data_t *comm_data_device = allocate_and_copy_to_device(comm_data, comm_count);
     bool *changed_device = allocate_and_copy_to_device(changed, 1);
@@ -604,6 +631,7 @@ extern "C" void move_nodes_fast(
         weights_device,
         node_data_device,
         comm_data_device,
+        comm_locks_device,
         vertex_count,
         edge_count,
         comm_count,
