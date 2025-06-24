@@ -624,6 +624,8 @@ extern "C" void move_nodes_fast(
         }
     }
 
+    printf("\nPartition count after move_nodes_fast: %d\n", partition_count);
+
     // TODO: we can get away with making this smaller, but it changes the indexing approach in the next kernel
     part_scan_data_t *part_scan_data = (part_scan_data_t *)malloc(comm_count * sizeof(part_scan_data_t));
     uint32_t *partition_offsets = (uint32_t *)malloc((partition_count + 1) * sizeof(uint32_t));

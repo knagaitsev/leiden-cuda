@@ -378,7 +378,7 @@ def merge_nodes_subset(G, p_refined, S: CommunityData, gamma, theta=1):
         if v_in >= gamma * v_tot * (S_tot - v_tot):
             R.append(node)
 
-    print(f"R: {R}, S_tot: {S_tot}")
+    # print(f"R: {R}, S_tot: {S_tot}")
 
     random.shuffle(R)
 
@@ -471,7 +471,7 @@ def refine_partition(G, p, gamma):
 
     for c, c_data in p.nodes(data=True):
         comm_data = c_data["community_data"]
-        print(f"Refining a subset of size: {len(comm_data.nodes)}")
+        # print(f"Refining a subset of size: {len(comm_data.nodes)}")
         merge_nodes_subset(G, p_refined, comm_data, gamma)
 
     return p_refined
@@ -534,7 +534,11 @@ def move_nodes_fast(G, community_graph, gamma):
         q.put(node)
         in_q.add(node)
     
+    print_iter = 0
+
     while True:
+        print_iter += 1
+
         if q.empty():
             return
         
@@ -711,6 +715,12 @@ def custom_leiden(G, gamma=1, max_iter=None):
         #     print(f"Node community: {comm}")
 
         p_refined = refine_partition(G, p, gamma)
+
+        # IMPORTANT: must do this before maintain_p, as maintain_p gives the nodes communities according to p
+        # which are not technically valid well-connected communities, whereas p_refined is
+        num_iter += 1
+        if max_iter is not None and num_iter > max_iter:
+            break
         
         # maintain partition P, this just makes it a partition of p_refined rather than the previous G
         # IMPORTANT: this must come before G = p_refined
@@ -731,11 +741,6 @@ def custom_leiden(G, gamma=1, max_iter=None):
         #     agg_counts.append(comm_data.aggregate_count)
         
         # print(f"Agg counts: {agg_counts}")
-
-        num_iter += 1
-
-        if max_iter is not None and num_iter > max_iter:
-            break
 
     # since all communities were found to have one node, we can safely propagate from G, rather
     # than from community_graph

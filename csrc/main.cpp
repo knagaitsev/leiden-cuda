@@ -5,6 +5,7 @@
 #include <vector>
 #include <map>
 #include <algorithm>
+#include <stdexcept>
 
 void leiden(std::vector<uint32_t> offsets, std::vector<uint32_t> indices, std::vector<float> weights);
 
@@ -49,7 +50,12 @@ offsets_indices_weights_t to_csr(edge_list_t edge_list) {
     std::vector<float> weights;
 
     auto curr_offset = 0;
+    auto idx = 0;
     for (auto kv : vertex_map) {
+        if (idx != kv.first) {
+            throw std::runtime_error("to_csr currently assumes that vertex labels are densely packed from 0->n");
+        }
+
         vertices.push_back(kv.first);
         
         // std::cout << "vertex: " << kv.first << "\n";
@@ -65,6 +71,8 @@ offsets_indices_weights_t to_csr(edge_list_t edge_list) {
 
         offsets.push_back(curr_offset);
         curr_offset += kv.second.size();
+
+        idx++;
     }
     offsets.push_back(curr_offset);
 
@@ -74,6 +82,7 @@ offsets_indices_weights_t to_csr(edge_list_t edge_list) {
 int main() {
     // std::ifstream file("validation/clique_ring.txt");
     std::ifstream file("data/arenas-jazz/out.arenas-jazz");
+    // std::ifstream file("data/flickr-groupmemberships/out.flickr-groupmemberships");
 
     if (!file.is_open()) {
         std::cerr << "Failed to open file.\n";
@@ -98,6 +107,33 @@ int main() {
     }
 
     file.close();
+
+    if (edge_list.size() == 0) {
+        throw std::runtime_error("edge_list empty");
+    }
+
+    auto min_vertex_idx = edge_list[0].first.first;
+
+    for (auto &edge_data : edge_list) {
+        auto edge = edge_data.first;
+        auto u = edge.first;
+        auto v = edge.second;
+
+        if (u < min_vertex_idx) {
+            min_vertex_idx = u;
+        }
+
+        if (v < min_vertex_idx) {
+            min_vertex_idx = v;
+        }
+    }
+
+    std::cout << "Min vertex idx: " << min_vertex_idx << "\n";
+
+    for (auto &edge_data : edge_list) {
+        edge_data.first.first -= min_vertex_idx;
+        edge_data.first.second -= min_vertex_idx;
+    }
 
     std::cout << "Edge list len: " << edge_list.size() << "\n";
 
