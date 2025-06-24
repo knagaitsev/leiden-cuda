@@ -29,7 +29,6 @@ __global__ void move_nodes_fast_kernel(
     uint32_t *offsets,
     uint32_t *indices,
     float *weights,
-    float *node_to_comm_weights,
     node_data_t *node_data,
     comm_data_t *comm_data,
     int *comm_locks,
@@ -128,7 +127,6 @@ __global__ void apply_node_moves_kernel(
     uint32_t *offsets,
     uint32_t *indices,
     float *weights,
-    float *node_to_comm_weights,
     node_data_t *node_data,
     comm_data_t *comm_data,
     int *comm_locks,
@@ -157,12 +155,12 @@ __global__ void apply_node_moves_kernel(
     }
 }
 
-// here we find every node that has a neighbor who changed their community, and we update the node_to_comm_weights of this node according
-// to the other nodes community change
-__global__ void update_node_to_comm_weights_kernel(
+// here we iterate over nodes and gather the comm-weight pairs for all the communities that a node has edges to
+__global__ void gather_node_to_comm_comms_weights_kernel(
     uint32_t *offsets,
     uint32_t *indices,
     float *weights,
+    uint32_t *node_to_comm_comms,
     float *node_to_comm_weights,
     node_data_t *node_data,
     comm_data_t *comm_data,
@@ -177,6 +175,10 @@ __global__ void update_node_to_comm_weights_kernel(
 ) {
     unsigned int node = blockIdx.x * blockDim.x + threadIdx.x;
 
+    if (node >= vertex_count) {
+        return;
+    }
+
     uint32_t offset = offsets[node];
     uint32_t offset_next = offsets[node + 1];
 
@@ -184,12 +186,11 @@ __global__ void update_node_to_comm_weights_kernel(
         uint32_t neighbor = indices[i];
         float weight = weights[i];
 
-        uint32_t prev_comm = orig_node_comms[neighbor];
+        // uint32_t prev_comm = orig_node_comms[neighbor];
         uint32_t curr_comm = node_data[neighbor].community;
 
-        if (prev_comm != curr_comm) {
-
-        }
+        node_to_comm_comms[i] = curr_comm;
+        node_to_comm_weights[i] = weight;
     }
 }
 
@@ -566,12 +567,19 @@ void move_nodes_fast(
         node_moves[i] = node_data[i].community;
     }
 
+    uint32_t *node_to_comm_comms = (uint32_t *)malloc(edge_count * sizeof(uint32_t));
+    float *node_to_comm_weights = (float *)malloc(edge_count * sizeof(float));
+
     uint32_t *node_moves_device = allocate_and_copy_to_device(node_moves, vertex_count);
 
     uint32_t *offsets_device = allocate_and_copy_to_device(offsets, vertex_count + 1);
     uint32_t *indices_device = allocate_and_copy_to_device(indices, edge_count);
     float *weights_device = allocate_and_copy_to_device(weights, edge_count);
-    float *node_to_comm_weights_device = allocate_and_copy_to_device(weights, edge_count);
+
+    // these can technically be uninitialized since we initialize them in a kernel
+    uint32_t *node_to_comm_comms_device = allocate_and_copy_to_device(node_to_comm_comms, edge_count);
+    float *node_to_comm_weights_device = allocate_and_copy_to_device(node_to_comm_weights, edge_count);
+
     int *comm_locks_device = allocate_and_copy_to_device(comm_locks, comm_count);
     node_data_t *node_data_device = allocate_and_copy_to_device(node_data, vertex_count);
     comm_data_t *comm_data_device = allocate_and_copy_to_device(comm_data, comm_count);
@@ -626,7 +634,6 @@ void move_nodes_fast(
             offsets_device,
             indices_device,
             weights_device,
-            node_to_comm_weights_device,
             node_data_device,
             comm_data_device,
             comm_locks_device,
@@ -650,6 +657,24 @@ void move_nodes_fast(
             offsets_device,
             indices_device,
             weights_device,
+            node_data_device,
+            comm_data_device,
+            comm_locks_device,
+            vertex_count,
+            edge_count,
+            comm_count,
+            gamma,
+            changed_device,
+            partition_device,
+            node_moves_device
+        );
+        cudaDeviceSynchronize();
+
+        gather_node_to_comm_comms_weights_kernel <<<dim_grid, dim_block>>> (
+            offsets_device,
+            indices_device,
+            weights_device,
+            node_to_comm_comms_device,
             node_to_comm_weights_device,
             node_data_device,
             comm_data_device,
@@ -663,6 +688,23 @@ void move_nodes_fast(
             node_moves_device
         );
         cudaDeviceSynchronize();
+        checkCudaError();
+
+        copy_from_device(node_to_comm_comms, node_to_comm_comms_device, edge_count);
+        copy_from_device(node_to_comm_weights, node_to_comm_weights_device, edge_count);
+
+        for (int node = 0; node < vertex_count; node++) {
+            uint32_t offset = offsets[node];
+            uint32_t offset_next = offsets[node + 1];
+
+            for (int i = offset; i < offset_next; i++) {
+                uint32_t comm = node_to_comm_comms[i];
+                float weight = node_to_comm_weights[i];
+
+                printf("Node %d, comm: %d, weight: %f\n", node, comm, weight);
+            }
+        }
+        return;
 
         // reset changed
         cudaMemset((void *)changed_device, 0, sizeof(bool));
