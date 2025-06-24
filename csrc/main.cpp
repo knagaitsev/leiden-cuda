@@ -3,6 +3,7 @@
 #include <string>
 #include <sstream>
 #include <vector>
+#include <set>
 #include <map>
 #include <algorithm>
 #include <stdexcept>
@@ -13,8 +14,30 @@ typedef std::vector<std::pair<std::pair<uint32_t, uint32_t>, float>> edge_list_t
 
 typedef std::pair<std::vector<uint32_t>, std::pair<std::vector<uint32_t>, std::vector<float>>> offsets_indices_weights_t;
 
+class EdgeStore {
+public:
+    // Vector of pairs: (vertex_id, weight)
+    std::vector<std::pair<uint32_t, float>> edge_weights;
+
+    // Set of unique vertex IDs
+    std::set<uint32_t> vertices;
+
+    // Insert method: only insert if vertex not already present
+    bool insert(std::pair<uint32_t, float> vertex_id_weight) {
+        if (vertices.find(vertex_id_weight.first) != vertices.end()) {
+            return false; // Already exists
+        }
+        edge_weights.push_back(vertex_id_weight);
+        vertices.insert(vertex_id_weight.first);
+        return true;
+    }
+};
+
+// TODO: make self-edges and duplicate edges work here
 offsets_indices_weights_t to_csr(edge_list_t edge_list) {
-    std::map<uint32_t, std::vector<std::pair<uint32_t, float>>> vertex_map;
+    std::map<uint32_t, EdgeStore> vertex_map;
+
+    int edge_count = 0;
 
     for (auto edge_data : edge_list) {
         auto edge = edge_data.first;
@@ -27,21 +50,25 @@ offsets_indices_weights_t to_csr(edge_list_t edge_list) {
         auto new_edge_to_v = std::make_pair(v, weight);
 
         if (vertex_map.find(u) != vertex_map.end()) {
-            vertex_map[u].push_back(new_edge_to_v);
+            edge_count += vertex_map[u].insert(new_edge_to_v);
         } else {
-            std::vector<std::pair<uint32_t, float>> neighbors;
-            neighbors.push_back(new_edge_to_v);
+            EdgeStore neighbors;
+            neighbors.insert(new_edge_to_v);
             vertex_map[u] = neighbors;
+
+            edge_count++;
         }
 
         if (vertex_map.find(v) != vertex_map.end()) {
-            vertex_map[v].push_back(new_edge_to_u);
+            vertex_map[v].insert(new_edge_to_u);
         } else {
-            std::vector<std::pair<uint32_t, float>> neighbors;
-            neighbors.push_back(new_edge_to_u);
+            EdgeStore neighbors;
+            neighbors.insert(new_edge_to_u);
             vertex_map[v] = neighbors;
         }
     }
+
+    std::cout << "Edge count: " << edge_count << "\n";
 
     std::vector<uint32_t> vertices;
 
@@ -60,17 +87,19 @@ offsets_indices_weights_t to_csr(edge_list_t edge_list) {
         
         // std::cout << "vertex: " << kv.first << "\n";
 
-        std::sort(kv.second.begin(), kv.second.end(), [](const auto& a, const auto& b) {
+        auto edge_weights = kv.second.edge_weights;
+
+        std::sort(edge_weights.begin(), edge_weights.end(), [](const auto& a, const auto& b) {
             return a.first < b.first;
         });
 
-        for (auto edge_data : kv.second) {
+        for (auto edge_data : edge_weights) {
             indices.push_back(edge_data.first);
             weights.push_back(edge_data.second);
         }
 
         offsets.push_back(curr_offset);
-        curr_offset += kv.second.size();
+        curr_offset += edge_weights.size();
 
         idx++;
     }
@@ -81,8 +110,8 @@ offsets_indices_weights_t to_csr(edge_list_t edge_list) {
 
 int main() {
     // std::ifstream file("validation/clique_ring.txt");
-    std::ifstream file("data/arenas-jazz/out.arenas-jazz");
-    // std::ifstream file("data/flickr-groupmemberships/out.flickr-groupmemberships");
+    // std::ifstream file("data/arenas-jazz/out.arenas-jazz");
+    std::ifstream file("data/flickr-groupmemberships/out.flickr-groupmemberships");
 
     if (!file.is_open()) {
         std::cerr << "Failed to open file.\n";
@@ -102,6 +131,12 @@ int main() {
         uint32_t a, b;
         if (iss >> a >> b) {
             auto weight = 1.0;
+
+            // if (a == b) {
+            //     std::cout << "Dataset contains self-edge, removing this edge as they are currently unsupported\n";
+            //     continue;
+            // }
+
             edge_list.push_back(std::make_pair(std::make_pair(a, b), weight));
         }
     }
@@ -135,13 +170,15 @@ int main() {
         edge_data.first.second -= min_vertex_idx;
     }
 
-    std::cout << "Edge list len: " << edge_list.size() << "\n";
+    // std::cout << "Edge list len: " << edge_list.size() << "\n";
 
     auto offsets_indices_weights = to_csr(edge_list);
     auto offsets = offsets_indices_weights.first;
     auto indices_weights = offsets_indices_weights.second;
     auto indices = indices_weights.first;
     auto weights = indices_weights.second;
+
+    std::cout << "Vertex count: " << (offsets.size() - 1) << "\n";
 
     std::cout << "Offsets size: " << offsets.size() << "\n";
     std::cout << "Indices size: " << indices.size() << "\n";

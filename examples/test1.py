@@ -27,7 +27,11 @@ G = nx.read_edgelist(curr_path / "../data/flickr-groupmemberships/out.flickr-gro
 
 # data_path = Path.resolve(curr_path / "../validation/clique_ring_weighted.txt")
 # G = nx.read_weighted_edgelist(data_path, nodetype=int)
-print(G)
+
+print("Number of vertices:", G.number_of_nodes())
+print("Number of edges:", G.number_of_edges())
+
+exit()
 
 has_self_loops = any(G.has_edge(n, n) for n in G.nodes())
 

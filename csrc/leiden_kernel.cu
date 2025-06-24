@@ -200,15 +200,16 @@ __global__ void move_nodes_fast_kernel(
         }
 
         // IMPORTANT: this currently assumes all the threads are in one block
-        __syncthreads();
+        // __syncthreads();
 
-        if (!*changed) {
-            break;
-        }
+        // if (!*changed) {
+        //     break;
+        // }
 
-        __syncthreads();
+        // __syncthreads();
 
-        *changed = false;
+        // *changed = false;
+        break;
     }
 }
 
