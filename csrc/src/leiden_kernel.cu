@@ -1,19 +1,6 @@
+#include "leiden/leiden_kernel.cuh"
 #include <cuda_runtime.h>
 #include <iostream>
-
-typedef struct node_data {
-    uint32_t community;
-    uint32_t agg_count;
-} node_data_t;
-
-typedef struct comm_data {
-    uint32_t agg_count;
-} comm_data_t;
-
-typedef struct part_scan_data {
-    uint32_t scanned_agg_count;
-    uint32_t curr_node_idx;
-} part_scan_data_t;
 
 __global__ void add_kernel(float* a, float* b, float* c, int N) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;

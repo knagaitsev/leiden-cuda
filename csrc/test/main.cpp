@@ -1,3 +1,4 @@
+#include "leiden/leiden.hpp"
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -7,8 +8,6 @@
 #include <map>
 #include <algorithm>
 #include <stdexcept>
-
-void leiden(std::vector<uint32_t> offsets, std::vector<uint32_t> indices, std::vector<float> weights);
 
 typedef std::vector<std::pair<std::pair<uint32_t, uint32_t>, float>> edge_list_t;
 
