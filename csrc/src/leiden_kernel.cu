@@ -985,7 +985,7 @@ void leiden_internal(
         prev_partition_count = *partition_count_host;
 
         printf("Move nodes fast iter: %d, partition count: %d\n", move_nodes_fast_iter, prev_partition_count);
-        if (move_nodes_fast_iter == 10) {
+        if (move_nodes_fast_iter == 1) {
             break;
         }
     }
