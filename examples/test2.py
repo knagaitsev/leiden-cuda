@@ -8,12 +8,15 @@ import cugraph
 import networkx as nx
 import pandas as pd
 from scipy.sparse import coo_matrix
+import json
 
 curr_path = Path(os.path.realpath(os.path.dirname(__file__)))
 
 # G_nx = nx.karate_club_graph()
 # G_nx = nx.read_edgelist(curr_path / "../data/flickr-groupmemberships/out.flickr-groupmemberships", comments="%")
-G_nx = nx.read_edgelist(curr_path / "../data/wikipedia_link_mi/out.wikipedia_link_mi", comments="%")
+# G_nx = nx.read_edgelist(curr_path / "../data/wikipedia_link_mi/out.wikipedia_link_mi", comments="%")
+# G_nx = nx.read_edgelist(curr_path / "../data/dimacs10-uk-2002/out.dimacs10-uk-2002", comments="%")
+G_nx = nx.read_edgelist(curr_path / "../data/youtube-links/out.youtube-links", comments="%")
 
 coo = nx.to_scipy_sparse_array(G_nx, format='coo')
 
@@ -27,11 +30,25 @@ print(f"Indices len: {len(indices)}")
 
 G = cugraph.from_adjlist(offsets, indices, None)
 
-start = time.time()
-partitions = cugraph.leiden(G)
-end = time.time()
+# warmup
+cugraph.leiden(G)
 
-print(f"Runtime: {end - start:.4f} seconds")
+runtimes = []
+
+for i in range(1, 11):
+    start = time.time()
+    partitions = cugraph.leiden(G, max_iter=i)
+    end = time.time()
+    runtime = end - start
+    print(f"Runtime: {end - start:.4f} seconds, max_iter={i}")
+
+    runtimes.append({
+        "max_iter": i,
+        "runtime": runtime
+    })
+
+with open(curr_path / "../results/cugraph_vary_max_iter.json", "w") as f:
+    json.dump(runtimes, f)
 
 # edges = cudf.DataFrame({
 #     'src': [0, 1, 2, 3, 4, 5, 6, 7],

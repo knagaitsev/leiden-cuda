@@ -22,8 +22,16 @@ G = Graph(edges=edges, directed=False)
 # G = ig.Graph.Famous('Zachary')
 
 # n_iterations=10
-partition = la.find_partition(G, la.CPMVertexPartition, resolution_parameter=0.05)
+# partition = la.find_partition(G, la.CPMVertexPartition, resolution_parameter=0.05)
+# print(partition)
 
-print(partition)
+optimiser = la.Optimiser()
+partition = la.CPMVertexPartition(G, resolution_parameter=0.05)
+
+# res = optimiser.move_nodes(partition)
+# print(res)
+
+diff = optimiser.optimise_partition(partition, n_iterations=-1)
+print(diff)
 
 # ig.plot(partition)
