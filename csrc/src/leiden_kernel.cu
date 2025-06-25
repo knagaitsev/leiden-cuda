@@ -162,7 +162,7 @@ __global__ void gather_node_to_comm_comms_weights_kernel(
     uint32_t *indices,
     float *weights,
     uint32_t *node_to_comm_comms,
-    float *node_to_comm_weights,
+    weight_idx_t *node_to_comm_weights,
     node_data_t *node_data,
     comm_data_t *comm_data,
     int *comm_locks,
@@ -183,7 +183,7 @@ __global__ void gather_node_to_comm_comms_weights_kernel(
     uint32_t offset = offsets[node];
     uint32_t offset_next = offsets[node + 1];
 
-    // uint32_t node_edge_count = offset_next - offset;
+    uint32_t node_edge_count = offset_next - offset;
 
     for (uint32_t i = offset; i < offset_next; i++) {
         uint32_t neighbor = indices[i];
@@ -192,10 +192,13 @@ __global__ void gather_node_to_comm_comms_weights_kernel(
         // uint32_t prev_comm = orig_node_comms[neighbor];
         uint32_t curr_comm = node_data[neighbor].community;
 
-        // node_to_comm_comms[offset + (i + 1) % node_edge_count] = curr_comm;
-        // node_to_comm_weights[offset + (i + 1) % node_edge_count] = weight;
+        weight_idx_t weight_idx = { .weight = weight, .idx = i };
         node_to_comm_comms[i] = curr_comm;
-        node_to_comm_weights[i] = weight;
+        node_to_comm_weights[i] = weight_idx;
+
+        // weight_idx_t weight_idx = { .weight = weight, .idx = offset + (i + 1) % node_edge_count };
+        // node_to_comm_comms[offset + (i + 1) % node_edge_count] = curr_comm;
+        // node_to_comm_weights[offset + (i + 1) % node_edge_count] = weight_idx;
     }
 }
 
@@ -573,7 +576,7 @@ void move_nodes_fast(
     }
 
     uint32_t *node_to_comm_comms = (uint32_t *)malloc(edge_count * sizeof(uint32_t));
-    float *node_to_comm_weights = (float *)malloc(edge_count * sizeof(float));
+    weight_idx_t *node_to_comm_weights = (weight_idx_t *)malloc(edge_count * sizeof(weight_idx_t));
 
     uint32_t *node_moves_device = allocate_and_copy_to_device(node_moves, vertex_count);
 
@@ -583,7 +586,7 @@ void move_nodes_fast(
 
     // these can technically be uninitialized since we initialize them in a kernel
     uint32_t *node_to_comm_comms_device = allocate_and_copy_to_device(node_to_comm_comms, edge_count);
-    float *node_to_comm_weights_device = allocate_and_copy_to_device(node_to_comm_weights, edge_count);
+    weight_idx_t *node_to_comm_weights_device = allocate_and_copy_to_device(node_to_comm_weights, edge_count);
 
     int *comm_locks_device = allocate_and_copy_to_device(comm_locks, comm_count);
     node_data_t *node_data_device = allocate_and_copy_to_device(node_data, vertex_count);
@@ -699,8 +702,8 @@ void move_nodes_fast(
         int node_to_comm_comms_size = edge_count * sizeof(uint32_t);
         cudaMalloc((void**)&node_to_comm_comms_sorted_device, node_to_comm_comms_size);
 
-        float* node_to_comm_weights_sorted_device;
-        int node_to_comm_weights_size = edge_count * sizeof(float);
+        weight_idx_t* node_to_comm_weights_sorted_device;
+        int node_to_comm_weights_size = edge_count * sizeof(weight_idx_t);
         cudaMalloc((void**)&node_to_comm_weights_sorted_device, node_to_comm_weights_size);
 
         void *d_temp_storage = nullptr;
@@ -734,9 +737,9 @@ void move_nodes_fast(
 
             for (int i = offset; i < offset_next; i++) {
                 uint32_t comm = node_to_comm_comms[i];
-                float weight = node_to_comm_weights[i];
+                weight_idx_t weight_idx = node_to_comm_weights[i];
 
-                printf("Node %d, comm: %d, weight: %f\n", node, comm, weight);
+                printf("Node %d, comm: %d, weight: %f, idx: %d\n", node, comm, weight_idx.weight, weight_idx.idx);
             }
         }
         return;
