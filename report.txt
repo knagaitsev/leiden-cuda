@@ -10,6 +10,9 @@ Log of correctness and optimizations:
 - Adjust greedy movement to enable multiple thread blocks, moving the while loop out of the kernel and doing the while-loop logic on CPU
     - greedy movement still takes forever on large graphs, as there is currently a 2D nested loop in which a node iterates over all of its neighbors in both loops
 
+For leidenalg on one iteration of yt (gamma=0.05), got the following runtimes:
+- 20.5576s (optimiser.move_nodes(partition))
+- 53.1056s la.find_partition
 
 Results for wikipedia_link_mi graph:
 

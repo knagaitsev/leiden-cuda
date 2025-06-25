@@ -42,8 +42,12 @@ gamma = 0.05
 n_iter=1
 
 
+optimiser = la.Optimiser()
+partition = la.CPMVertexPartition(G, resolution_parameter=0.05)
+
 start = time.time()
-partition = la.find_partition(G, la.CPMVertexPartition, resolution_parameter=gamma, n_iterations=n_iter)
+# partition = la.find_partition(G, la.CPMVertexPartition, resolution_parameter=gamma, n_iterations=n_iter)
+res = optimiser.move_nodes(partition)
 end = time.time()
 runtime = end - start
 print(f"Runtime: {end - start:.4f} seconds")
@@ -55,7 +59,6 @@ print(f"Runtime: {end - start:.4f} seconds")
 
 # optimiser = la.Optimiser()
 # partition = la.CPMVertexPartition(G, resolution_parameter=0.05)
-
 # res = optimiser.move_nodes(partition)
 # print(res)
 

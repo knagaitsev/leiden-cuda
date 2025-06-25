@@ -1,0 +1,18 @@
+[
+    {
+        "label": "leidenalg",
+        "runtime": 20.5576
+    },
+    {
+        "label": "cuGraph leiden",
+        "runtime": 3.5
+    },
+    {
+        "label": "cuGraph louvain",
+        "runtime": 2.5
+    },
+    {
+        "label": "ours",
+        "runtime": 10
+    }
+]
