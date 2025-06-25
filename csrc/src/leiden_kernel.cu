@@ -598,6 +598,51 @@ __global__ void refine_kernel(
     }
 }
 
+__global__ void cpm_kernel(
+    uint32_t *offsets,
+    uint32_t *indices,
+    float *weights,
+    node_data_t *node_data,
+    int vertex_count,
+    int edge_count,
+    int comm_count,
+    float gamma,
+    float *cpm_node_internal_sums
+) {
+    unsigned int node = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (node >= vertex_count) {
+        return;
+    }
+
+    uint32_t curr_comm = node_data[node].community;
+
+    uint32_t offset = offsets[node];
+    uint32_t offset_next = offsets[node + 1];
+
+    float tot = 0.0f;
+
+    for (uint32_t i = offset; i < offset_next; i++) {
+        uint32_t neighbor = indices[i];
+        float weight = weights[i];
+
+        uint32_t neighbor_comm = node_data[neighbor].community;
+
+        if (curr_comm != neighbor_comm) {
+            continue;
+        }
+
+        if (neighbor == node) {
+            // everything else is double counted, so we need to double if it is a self-edge
+            tot += 2.0 * (weight - gamma);
+        } else {
+            tot += weight - gamma;
+        }
+    }
+
+    cpm_node_internal_sums[node] = tot;
+}
+
 template <typename T>
 T* allocate_and_copy_to_device(T* data_host, int len) {
     T* data_device;
@@ -652,10 +697,7 @@ void leiden_internal(
     // cudaMemset((void *)binsDevice, 0, binsSize);
 
     int *comm_locks = (int *)malloc(comm_count * sizeof(int));
-
-    for (int i = 0; i < comm_count; i++) {
-        comm_locks[i] = 0;
-    }
+    memset(comm_locks, 0, comm_count * sizeof(float));
 
     // TODO: improve this and make sure it is initialized correctly on subsequent iterations
     uint32_t *orig_node_comms = (uint32_t *)malloc(vertex_count * sizeof(uint32_t));
@@ -716,6 +758,11 @@ void leiden_internal(
     uint32_t *node_to_comm_counts_final_device = allocate_and_copy_to_device(node_to_comm_counts_final, vertex_count);
     uint32_t *node_to_comm_comms_final_device = allocate_and_copy_to_device(indices, edge_count);
     float *node_to_comm_weights_final_device = allocate_and_copy_to_device(weights, edge_count);
+
+    // this is for computing CPM on the GPU at the end
+    float *cpm_node_internal_sums = (float *)malloc(vertex_count * sizeof(float));
+    memset(cpm_node_internal_sums, 0, vertex_count * sizeof(float));
+    float *cpm_node_internal_sums_device = allocate_and_copy_to_device(cpm_node_internal_sums, vertex_count);
 
 
     for (int i = 0; i < vertex_count; i++) {
@@ -946,6 +993,33 @@ void leiden_internal(
 
     printf("\nPartition count after move_nodes_fast: %d\n", partition_count);
 
+    // copy_from_device(node_data, node_data_device, vertex_count);
+    // copy_from_device(comm_data, comm_data_device, comm_count);
+
+    cpm_kernel <<<dim_grid, dim_block>>> (
+        offsets_device,
+        indices_device,
+        weights_device,
+        node_data_device,
+        vertex_count,
+        edge_count,
+        comm_count,
+        gamma,
+        cpm_node_internal_sums_device
+    );
+
+    copy_from_device(cpm_node_internal_sums, cpm_node_internal_sums_device, vertex_count);
+
+    float cpm_tot = 0.0f;
+
+    for (int i = 0; i < vertex_count; i++) {
+        cpm_tot += cpm_node_internal_sums[i];
+    }
+
+    float cpm = cpm_tot;
+
+    printf("CPM: %f\n", cpm);
+
     return;
 
     // TODO: we can get away with making this smaller, but it changes the indexing approach in the next kernel
@@ -1050,6 +1124,7 @@ void leiden_internal(
         refined_comm_agg_counts_device
     );
     cudaDeviceSynchronize();
+    checkCudaError();
 
     copy_from_device(node_refined_comms, node_refined_comms_device, vertex_count);
     copy_from_device(refined_comm_agg_counts, refined_comm_agg_counts_device, vertex_count);
