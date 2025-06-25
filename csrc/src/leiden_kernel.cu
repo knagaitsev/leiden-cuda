@@ -67,7 +67,7 @@ __global__ void move_nodes_fast_kernel(
     uint32_t best_comm = curr_comm;
     float best_delta = 0.0f;
 
-    uint32_t node_edge_count = offset_next - offset;
+    // uint32_t node_edge_count = offset_next - offset;
 
     // aggregate count of nodes in old community (including current node)
     int agg_count_old = comm_data[curr_comm].agg_count;
@@ -128,12 +128,12 @@ __global__ void move_nodes_fast_kernel(
         }
     }
 
-    uint32_t comm_lo = curr_comm;
-    uint32_t comm_hi = best_comm;
-    if (best_comm < curr_comm) {
-        comm_lo = best_comm;
-        comm_hi = curr_comm;
-    }
+    // uint32_t comm_lo = curr_comm;
+    // uint32_t comm_hi = best_comm;
+    // if (best_comm < curr_comm) {
+    //     comm_lo = best_comm;
+    //     comm_hi = curr_comm;
+    // }
 
     if (best_comm != curr_comm) {
         // if (atomicCAS(&(comm_locks[comm_lo]), 0, 1) == 0 && atomicCAS(&(comm_locks[comm_hi]), 0, 1) == 0) {
@@ -211,7 +211,7 @@ __global__ void gather_node_to_comm_comms_weights_kernel(
     uint32_t offset = offsets[node];
     uint32_t offset_next = offsets[node + 1];
 
-    uint32_t node_edge_count = offset_next - offset;
+    // uint32_t node_edge_count = offset_next - offset;
 
     for (uint32_t i = offset; i < offset_next; i++) {
         uint32_t neighbor = indices[i];
@@ -515,8 +515,6 @@ __global__ void refine_kernel(
             if (neighbor_part_idx != part_idx) {
                 continue;
             }
-
-            float weight = weights[j];
 
             uint32_t neighbor_comm = node_refined_comms[neighbor];
 
