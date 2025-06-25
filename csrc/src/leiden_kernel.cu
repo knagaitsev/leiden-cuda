@@ -29,6 +29,7 @@ __global__ void move_nodes_fast_kernel(
     uint32_t *indices,
     float *weights,
     node_data_t *node_data,
+    uint32_t *node_agg_counts,
     comm_data_t *comm_data,
     int *comm_locks,
     int vertex_count,
@@ -72,7 +73,7 @@ __global__ void move_nodes_fast_kernel(
     int agg_count_old = comm_data[curr_comm].agg_count;
 
     // aggregate count of current node
-    int node_agg_count = node_data[node].agg_count;
+    int node_agg_count = node_agg_counts[node];
 
     // total edge weight of incoming edges from old community
     float k_vc_old = 0.0;
@@ -153,6 +154,7 @@ __global__ void apply_node_moves_kernel(
     uint32_t *indices,
     float *weights,
     node_data_t *node_data,
+    uint32_t *node_agg_counts,
     comm_data_t *comm_data,
     int *comm_locks,
     int vertex_count,
@@ -169,7 +171,7 @@ __global__ void apply_node_moves_kernel(
         return;
     }
     uint32_t curr_comm = node_data[node].community;
-    int node_agg_count = node_data[node].agg_count;
+    int node_agg_count = node_agg_counts[node];
 
     uint32_t best_comm = node_moves[node];
 
@@ -314,6 +316,7 @@ __global__ void refine_get_r_kernel(
     uint32_t *indices,
     float *weights,
     node_data_t *node_data,
+    uint32_t *node_agg_counts,
     int vertex_count,
     int edge_count,
     float gamma,
@@ -339,7 +342,7 @@ __global__ void refine_get_r_kernel(
         // TODO: may need to mark that this node is a member of this partition, so that we can
         // tell when we iterate the nodes
 
-        s_tot += node_data[node].agg_count;
+        s_tot += node_agg_counts[node];
 
         node_part[node] = part_idx;
     }
@@ -354,7 +357,7 @@ __global__ void refine_get_r_kernel(
     for (int i = part_offset; i < part_offset_next; i++) {
         uint32_t node = partition[i];
         
-        uint32_t v_tot = node_data[node].agg_count;
+        uint32_t v_tot = node_agg_counts[node];
 
         uint32_t v_in = 0;
 
@@ -434,6 +437,7 @@ __global__ void refine_kernel(
     uint32_t *indices,
     float *weights,
     node_data_t *node_data,
+    uint32_t *node_agg_counts,
     int vertex_count,
     int edge_count,
     float gamma,
@@ -458,7 +462,7 @@ __global__ void refine_kernel(
     for (int i = part_offset; i < part_offset + local_r_len; i++) {
         uint32_t node = r[i];
         uint32_t curr_comm = node_refined_comms[node];
-        float node_agg_count = node_data[i].agg_count;
+        uint32_t node_agg_count = node_agg_counts[i];
 
         uint32_t agg_count_old = refined_comm_agg_counts[curr_comm];
 
@@ -630,6 +634,7 @@ void leiden_internal(
     uint32_t *indices,
     float *weights,
     node_data_t *node_data,
+    uint32_t *node_agg_counts,
     comm_data_t *comm_data,
     int vertex_count,
     int edge_count,
@@ -679,6 +684,7 @@ void leiden_internal(
 
     int *comm_locks_device = allocate_and_copy_to_device(comm_locks, comm_count);
     node_data_t *node_data_device = allocate_and_copy_to_device(node_data, vertex_count);
+    uint32_t *node_agg_counts_device = allocate_and_copy_to_device(node_agg_counts, vertex_count);
     comm_data_t *comm_data_device = allocate_and_copy_to_device(comm_data, comm_count);
     bool *changed_device = allocate_and_copy_to_device(changed, 1);
     uint32_t *orig_node_comms_device = allocate_and_copy_to_device(orig_node_comms, vertex_count);
@@ -717,7 +723,7 @@ void leiden_internal(
         // TODO: refined_comm_in_edge_weights -- need to initialize this correctly
         refined_comm_in_edge_weights[i] = 0;
         // IMPORTANT: must make sure we get the agg count here from the node
-        refined_comm_agg_counts[i] = node_data[i].agg_count;
+        refined_comm_agg_counts[i] = node_agg_counts[i];
     }
 
     uint32_t *node_refined_comms_device = allocate_and_copy_to_device(node_refined_comms, vertex_count);
@@ -778,6 +784,7 @@ void leiden_internal(
             indices_device,
             weights_device,
             node_data_device,
+            node_agg_counts_device,
             comm_data_device,
             comm_locks_device,
             vertex_count,
@@ -805,6 +812,7 @@ void leiden_internal(
             indices_device,
             weights_device,
             node_data_device,
+            node_agg_counts_device,
             comm_data_device,
             comm_locks_device,
             vertex_count,
@@ -986,6 +994,7 @@ void leiden_internal(
         indices_device,
         weights_device,
         node_data_device,
+        node_agg_counts_device,
         vertex_count,
         edge_count,
         gamma,
@@ -1025,6 +1034,7 @@ void leiden_internal(
         indices_device,
         weights_device,
         node_data_device,
+        node_agg_counts_device,
         vertex_count,
         edge_count,
         gamma,

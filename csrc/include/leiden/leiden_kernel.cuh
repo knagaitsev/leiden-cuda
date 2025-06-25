@@ -4,7 +4,6 @@
 
 typedef struct node_data {
     uint32_t community;
-    uint32_t agg_count;
 } node_data_t;
 
 typedef struct comm_data {
@@ -26,6 +25,7 @@ void leiden_internal(
     uint32_t *indices,
     float *weights,
     node_data_t *node_data,
+    uint32_t *node_agg_counts,
     comm_data_t *comm_data,
     int vertex_count,
     int edge_count,

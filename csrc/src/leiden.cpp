@@ -13,11 +13,15 @@ void leiden(std::vector<uint32_t> offsets, std::vector<uint32_t> indices, std::v
 
     std::vector<node_data_t> node_data;
 
+    std::vector<uint32_t> node_agg_counts;
+
     std::vector<comm_data_t> comm_data;
 
     for (uint32_t i = 0; i < vertex_count; i++) {
-        node_data_t node = { .community = i, .agg_count = 1 };
+        node_data_t node = { .community = i };
         node_data.push_back(node);
+
+        node_agg_counts.push_back(1);
 
         comm_data_t comm = { .agg_count = 1 };
         comm_data.push_back(comm);
@@ -30,7 +34,7 @@ void leiden(std::vector<uint32_t> offsets, std::vector<uint32_t> indices, std::v
 
     int comm_count = vertex_count;
 
-    leiden_internal(offsets.data(), indices.data(), weights.data(), node_data.data(), comm_data.data(), vertex_count, edge_count, comm_count, gamma);
+    leiden_internal(offsets.data(), indices.data(), weights.data(), node_data.data(), node_agg_counts.data(), comm_data.data(), vertex_count, edge_count, comm_count, gamma);
 
     // for (int i = 0; i < vertex_count; i++) {
     //     std::cout << "Vertex " << i << " community: " << node_data[i].community << "\n";
