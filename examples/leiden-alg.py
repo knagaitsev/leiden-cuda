@@ -3,6 +3,7 @@ import leidenalg as la
 from igraph import Graph
 from pathlib import Path
 import os
+import time
 
 curr_path = Path(os.path.realpath(os.path.dirname(__file__)))
 
@@ -21,7 +22,8 @@ def compute_cpm(partition, gamma):
         total += internal_weight - gamma * (n_c * (n_c - 1) / 2)
     return total * 2
 
-data_path = (curr_path / "../data/arenas-jazz/out.arenas-jazz").resolve()
+data_path = (curr_path / "../data/youtube-links/out.youtube-links").resolve()
+# data_path = (curr_path / "../data/arenas-jazz/out.arenas-jazz").resolve()
 # data_path = (curr_path / "../data/flickr-groupmemberships/out.flickr-groupmemberships").resolve()
 edges = []
 with open(data_path, 'r') as f:
@@ -38,11 +40,18 @@ G = Graph(edges=edges, directed=False)
 
 gamma = 0.05
 n_iter=1
-partition = la.find_partition(G, la.CPMVertexPartition, resolution_parameter=gamma, n_iterations=n_iter)
-print(partition)
 
-cpm_value = compute_cpm(partition, gamma)
-print("CPM value:", cpm_value)
+
+start = time.time()
+partition = la.find_partition(G, la.CPMVertexPartition, resolution_parameter=gamma, n_iterations=n_iter)
+end = time.time()
+runtime = end - start
+print(f"Runtime: {end - start:.4f} seconds")
+
+# print(partition)
+
+# cpm_value = compute_cpm(partition, gamma)
+# print("CPM value:", cpm_value)
 
 # optimiser = la.Optimiser()
 # partition = la.CPMVertexPartition(G, resolution_parameter=0.05)
