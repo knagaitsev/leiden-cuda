@@ -737,6 +737,27 @@ void move_nodes_fast(
 
     init_rng<<<dim_grid, dim_block>>>(d_state, 1234);
 
+    uint32_t* node_to_comm_comms_sorted_device;
+    int node_to_comm_comms_size = edge_count * sizeof(uint32_t);
+    cudaMalloc((void**)&node_to_comm_comms_sorted_device, node_to_comm_comms_size);
+
+    float* node_to_comm_weights_sorted_device;
+    int node_to_comm_weights_size = edge_count * sizeof(float);
+    cudaMalloc((void**)&node_to_comm_weights_sorted_device, node_to_comm_weights_size);
+
+    void *d_temp_storage = nullptr;
+    size_t temp_storage_bytes = 0;
+    cub::DeviceSegmentedRadixSort::SortPairs(
+        d_temp_storage, temp_storage_bytes,
+        node_to_comm_comms_device,
+        node_to_comm_comms_sorted_device,
+        node_to_comm_weights_device,
+        node_to_comm_weights_sorted_device,
+        edge_count, vertex_count, offsets_device, offsets_device + 1);
+
+    // Allocate temporary storage
+    cudaMalloc(&d_temp_storage, temp_storage_bytes);
+
     while (true) {
         generate_random<<<dim_grid, dim_block>>>(d_random, d_state, vertex_count);
 
@@ -803,27 +824,6 @@ void move_nodes_fast(
         );
         cudaDeviceSynchronize();
         checkCudaError();
-
-        uint32_t* node_to_comm_comms_sorted_device;
-        int node_to_comm_comms_size = edge_count * sizeof(uint32_t);
-        cudaMalloc((void**)&node_to_comm_comms_sorted_device, node_to_comm_comms_size);
-
-        float* node_to_comm_weights_sorted_device;
-        int node_to_comm_weights_size = edge_count * sizeof(float);
-        cudaMalloc((void**)&node_to_comm_weights_sorted_device, node_to_comm_weights_size);
-
-        void *d_temp_storage = nullptr;
-        size_t temp_storage_bytes = 0;
-        cub::DeviceSegmentedRadixSort::SortPairs(
-            d_temp_storage, temp_storage_bytes,
-            node_to_comm_comms_device,
-            node_to_comm_comms_sorted_device,
-            node_to_comm_weights_device,
-            node_to_comm_weights_sorted_device,
-            edge_count, vertex_count, offsets_device, offsets_device + 1);
-
-        // Allocate temporary storage
-        cudaMalloc(&d_temp_storage, temp_storage_bytes);
 
         // Run sorting operation
         cub::DeviceSegmentedRadixSort::SortPairs(
