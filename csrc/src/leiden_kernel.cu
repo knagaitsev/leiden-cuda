@@ -51,7 +51,7 @@ __global__ void move_nodes_fast_kernel(
 
     float rand = d_random[node];
 
-    if (rand > 0.2) {
+    if (rand > 0.5) {
         return;
     }
 
@@ -127,14 +127,16 @@ __global__ void move_nodes_fast_kernel(
     }
 
     if (best_comm != curr_comm) {
-        if (atomicCAS(&(comm_locks[comm_lo]), 0, 1) == 0 && atomicCAS(&(comm_locks[comm_hi]), 0, 1) == 0) {
-            // node_data[node].community = best_comm;
-            // comm_data[best_comm].agg_count += node_agg_count;
-            // comm_data[curr_comm].agg_count -= node_agg_count;
-            node_moves[node] = best_comm;
+        // if (atomicCAS(&(comm_locks[comm_lo]), 0, 1) == 0 && atomicCAS(&(comm_locks[comm_hi]), 0, 1) == 0) {
+        //     // node_data[node].community = best_comm;
+        //     // comm_data[best_comm].agg_count += node_agg_count;
+        //     // comm_data[curr_comm].agg_count -= node_agg_count;
+        //     node_moves[node] = best_comm;
+        //     *changed = true;
+        // }
 
-            *changed = true;
-        }
+        node_moves[node] = best_comm;
+        *changed = true;
     }
 }
 
@@ -165,8 +167,10 @@ __global__ void apply_node_moves_kernel(
 
     if (best_comm != curr_comm) {
         node_data[node].community = best_comm;
-        comm_data[best_comm].agg_count += node_agg_count;
-        comm_data[curr_comm].agg_count -= node_agg_count;
+        // comm_data[best_comm].agg_count += node_agg_count;
+        // comm_data[curr_comm].agg_count -= node_agg_count;
+        atomicAdd(&(comm_data[best_comm].agg_count), node_agg_count);
+        atomicAdd(&(comm_data[curr_comm].agg_count), -node_agg_count);
     }
 }
 
@@ -881,8 +885,8 @@ void move_nodes_fast(
 
         move_nodes_fast_iter++;
 
-        printf("Move nodes fast iter: %d\n", move_nodes_fast_iter);
-        if (move_nodes_fast_iter == 200) {
+        // printf("Move nodes fast iter: %d\n", move_nodes_fast_iter);
+        if (move_nodes_fast_iter == 100) {
             break;
         }
     }
