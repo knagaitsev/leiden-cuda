@@ -169,7 +169,7 @@ __global__ void gather_node_to_comm_comms_weights_kernel(
     uint32_t *indices,
     float *weights,
     uint32_t *node_to_comm_comms,
-    weight_idx_t *node_to_comm_weights,
+    float *node_to_comm_weights,
     node_data_t *node_data,
     comm_data_t *comm_data,
     int *comm_locks,
@@ -199,13 +199,11 @@ __global__ void gather_node_to_comm_comms_weights_kernel(
         // uint32_t prev_comm = orig_node_comms[neighbor];
         uint32_t curr_comm = node_data[neighbor].community;
 
-        weight_idx_t weight_idx = { .weight = weight, .idx = i };
         node_to_comm_comms[i] = curr_comm;
-        node_to_comm_weights[i] = weight_idx;
+        node_to_comm_weights[i] = weight;
 
-        // weight_idx_t weight_idx = { .weight = weight, .idx = offset + (i + 1) % node_edge_count };
         // node_to_comm_comms[offset + (i + 1) % node_edge_count] = curr_comm;
-        // node_to_comm_weights[offset + (i + 1) % node_edge_count] = weight_idx;
+        // node_to_comm_weights[offset + (i + 1) % node_edge_count] = weight;
     }
 }
 
@@ -214,7 +212,7 @@ __global__ void scan_node_to_comm_comms_weights_kernel(
     uint32_t *indices,
     float *weights,
     uint32_t *node_to_comm_comms_sorted,
-    weight_idx_t *node_to_comm_weights_sorted,
+    float *node_to_comm_weights_sorted,
     node_data_t *node_data,
     comm_data_t *comm_data,
     int *comm_locks,
@@ -251,7 +249,7 @@ __global__ void scan_node_to_comm_comms_weights_kernel(
 
     for (uint32_t i = offset; i < offset_next; i++) {
         uint32_t next_comm = node_to_comm_comms_sorted[i];
-        weight_idx_t weight_idx = node_to_comm_weights_sorted[i];
+        float weight = node_to_comm_weights_sorted[i];
 
         if (next_comm != curr_comm) {
             // TODO: save curr_comm_edge_count and weight_tot here
@@ -262,7 +260,7 @@ __global__ void scan_node_to_comm_comms_weights_kernel(
         }
 
         curr_comm_edge_count++;
-        weight_tot += weight_idx.weight;
+        weight_tot += weight;
         curr_comm = next_comm;
     }
 
@@ -645,7 +643,7 @@ void move_nodes_fast(
     }
 
     uint32_t *node_to_comm_comms = (uint32_t *)malloc(edge_count * sizeof(uint32_t));
-    weight_idx_t *node_to_comm_weights = (weight_idx_t *)malloc(edge_count * sizeof(weight_idx_t));
+    float *node_to_comm_weights = (float *)malloc(edge_count * sizeof(float));
 
     uint32_t *node_moves_device = allocate_and_copy_to_device(node_moves, vertex_count);
 
@@ -655,7 +653,7 @@ void move_nodes_fast(
 
     // these can technically be uninitialized since we initialize them in a kernel
     uint32_t *node_to_comm_comms_device = allocate_and_copy_to_device(node_to_comm_comms, edge_count);
-    weight_idx_t *node_to_comm_weights_device = allocate_and_copy_to_device(node_to_comm_weights, edge_count);
+    float *node_to_comm_weights_device = allocate_and_copy_to_device(node_to_comm_weights, edge_count);
 
     int *comm_locks_device = allocate_and_copy_to_device(comm_locks, comm_count);
     node_data_t *node_data_device = allocate_and_copy_to_device(node_data, vertex_count);
@@ -786,8 +784,8 @@ void move_nodes_fast(
         int node_to_comm_comms_size = edge_count * sizeof(uint32_t);
         cudaMalloc((void**)&node_to_comm_comms_sorted_device, node_to_comm_comms_size);
 
-        weight_idx_t* node_to_comm_weights_sorted_device;
-        int node_to_comm_weights_size = edge_count * sizeof(weight_idx_t);
+        float* node_to_comm_weights_sorted_device;
+        int node_to_comm_weights_size = edge_count * sizeof(float);
         cudaMalloc((void**)&node_to_comm_weights_sorted_device, node_to_comm_weights_size);
 
         void *d_temp_storage = nullptr;
@@ -844,9 +842,9 @@ void move_nodes_fast(
 
             for (int i = offset; i < offset_next; i++) {
                 uint32_t comm = node_to_comm_comms[i];
-                weight_idx_t weight_idx = node_to_comm_weights[i];
+                float weight = node_to_comm_weights[i];
 
-                printf("Node %d, comm: %d, weight: %f, idx: %d\n", node, comm, weight_idx.weight, weight_idx.idx);
+                printf("Node %d, comm: %d, weight: %f\n", node, comm, weight);
             }
         }
         return;
