@@ -5,11 +5,11 @@
     },
     {
         "label": "cuGraph leiden",
-        "runtime": 3.5
+        "runtime": 1.7450
     },
     {
         "label": "cuGraph louvain",
-        "runtime": 2.5
+        "runtime": 3.1946
     },
     {
         "label": "ours",

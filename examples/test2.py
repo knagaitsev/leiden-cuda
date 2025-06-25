@@ -43,25 +43,36 @@ print(f"Indices len: {len(indices)}")
 
 G = cugraph.from_adjlist(offsets, indices, None)
 
+vary_max_iter = False
+
 # warmup
-cugraph.leiden(G)
+# cugraph.leiden(G)
+cugraph.louvain(G)
 
-runtimes = []
+if vary_max_iter:
+    runtimes = []
 
-for i in range(1, 11):
+    for i in range(1, 11):
+        start = time.time()
+        partitions = cugraph.leiden(G, max_iter=i)
+        end = time.time()
+        runtime = end - start
+        print(f"Runtime: {end - start:.4f} seconds, max_iter={i}")
+
+        runtimes.append({
+            "max_iter": i,
+            "runtime": runtime
+        })
+
+    with open(curr_path / "../results/cugraph_vary_max_iter.json", "w") as f:
+        json.dump(runtimes, f)
+else:
     start = time.time()
-    partitions = cugraph.leiden(G, max_iter=i)
+    # partitions = cugraph.leiden(G, max_iter=1)
+    partitions = cugraph.louvain(G, max_level=1)
     end = time.time()
     runtime = end - start
-    print(f"Runtime: {end - start:.4f} seconds, max_iter={i}")
-
-    runtimes.append({
-        "max_iter": i,
-        "runtime": runtime
-    })
-
-with open(curr_path / "../results/cugraph_vary_max_iter.json", "w") as f:
-    json.dump(runtimes, f)
+    print(f"Runtime: {end - start:.4f} seconds")
 
 # edges = cudf.DataFrame({
 #     'src': [0, 1, 2, 3, 4, 5, 6, 7],
