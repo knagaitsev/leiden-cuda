@@ -5,22 +5,22 @@ project(myleiden LANGUAGES CXX CUDA)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-add_library(myleiden SHARED
-    src/leiden_kernel.cu
-    src/leiden.cpp
-    src/bindings.cpp
-)
+# add_library(myleiden SHARED
+#     src/leiden_kernel.cu
+#     src/leiden.cpp
+#     src/bindings.cpp
+# )
 
-target_include_directories(myleiden PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
+# target_include_directories(myleiden PUBLIC
+#     ${CMAKE_CURRENT_SOURCE_DIR}/include
+# )
 
 # target_link_libraries(myleiden PRIVATE pybind11::module)
 
-set_target_properties(myleiden PROPERTIES
-    PREFIX ""
-    CUDA_SEPARABLE_COMPILATION ON
-)
+# set_target_properties(myleiden PROPERTIES
+#     PREFIX ""
+#     CUDA_SEPARABLE_COMPILATION ON
+# )
 
 add_executable(leiden_test
     src/leiden_kernel.cu
