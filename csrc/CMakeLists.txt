@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.18)
 project(myleiden LANGUAGES CXX CUDA)
 
-find_package(pybind11 REQUIRED)
+# find_package(pybind11 REQUIRED)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 
@@ -15,7 +15,7 @@ target_include_directories(myleiden PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(myleiden PRIVATE pybind11::module)
+# target_link_libraries(myleiden PRIVATE pybind11::module)
 
 set_target_properties(myleiden PROPERTIES
     PREFIX ""
