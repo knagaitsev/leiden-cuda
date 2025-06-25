@@ -598,6 +598,24 @@ __global__ void refine_kernel(
     }
 }
 
+__global__ void count_partitions_kernel(
+    comm_data_t *comm_data,
+    int comm_count,
+    uint32_t *partition_count
+) {
+    unsigned int comm = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (comm >= comm_count) {
+        return;
+    }
+
+    uint32_t agg_count = comm_data[comm].agg_count;
+
+    if (agg_count > 0) {
+        atomicAdd(partition_count, 1);
+    }
+}
+
 __global__ void cpm_kernel(
     uint32_t *offsets,
     uint32_t *indices,
@@ -765,6 +783,11 @@ void leiden_internal(
     float *cpm_comm_internal_sums_device = allocate_and_copy_to_device(cpm_comm_internal_sums, comm_count);
 
 
+    uint32_t *partition_count_host = (uint32_t *)malloc(sizeof(uint32_t));
+    *partition_count_host = 0;
+    uint32_t *partition_count_device = allocate_and_copy_to_device(partition_count_host, 1);
+
+
     for (int i = 0; i < vertex_count; i++) {
         node_refined_comms[i] = i;
         // TODO: refined_comm_in_edge_weights -- need to initialize this correctly
@@ -822,6 +845,8 @@ void leiden_internal(
 
     // Allocate temporary storage
     cudaMalloc(&d_temp_storage, temp_storage_bytes);
+
+    uint32_t prev_partition_count = comm_count;
 
     while (true) {
         generate_random<<<dim_grid, dim_block>>>(d_random, d_state, vertex_count);
@@ -948,7 +973,20 @@ void leiden_internal(
 
         move_nodes_fast_iter++;
 
-        printf("Move nodes fast iter: %d\n", move_nodes_fast_iter);
+        count_partitions_kernel <<<dim_grid, dim_block>>> (
+            comm_data_device,
+            comm_count,
+            partition_count_device
+        );
+        cudaDeviceSynchronize();
+        checkCudaError();
+
+        copy_from_device(partition_count_host, partition_count_device, 1);
+        cudaMemset((void *)partition_count_device, 0, sizeof(uint32_t));
+
+        prev_partition_count = *partition_count_host;
+
+        // printf("Move nodes fast iter: %d, partition count: %d\n", move_nodes_fast_iter, prev_partition_count);
         if (move_nodes_fast_iter == 10) {
             break;
         }
@@ -980,21 +1018,22 @@ void leiden_internal(
 
     copy_from_device(comm_data, comm_data_device, comm_count);
 
-    // TODO: we could use scan kernel here if it is a performance bottleneck, but for now
-    // we just do it on cpu
-    int partition_count = 0;
-    for (int i = 0; i < comm_count; i++) {
-        uint32_t agg_count = comm_data[i].agg_count;
-        if (agg_count > 0) {
-            // printf("Partition %u count: %u\n", i, agg_count);
-            partition_count++;
-        }
-    }
+    int partition_count = prev_partition_count;
+    // int partition_count = 0;
+    // for (int i = 0; i < comm_count; i++) {
+    //     uint32_t agg_count = comm_data[i].agg_count;
+    //     if (agg_count > 0) {
+    //         // printf("Partition %u count: %u\n", i, agg_count);
+    //         partition_count++;
+    //     }
+    // }
 
     printf("\nPartition count after move_nodes_fast: %d\n", partition_count);
 
     // copy_from_device(node_data, node_data_device, vertex_count);
     // copy_from_device(comm_data, comm_data_device, comm_count);
+
+    return;
 
     cpm_kernel <<<dim_grid, dim_block>>> (
         offsets_device,
@@ -1027,8 +1066,6 @@ void leiden_internal(
     float cpm = cpm_tot;
 
     printf("CPM: %f\n", cpm);
-
-    return;
 
     // TODO: we can get away with making this smaller, but it changes the indexing approach in the next kernel
     part_scan_data_t *part_scan_data = (part_scan_data_t *)malloc(comm_count * sizeof(part_scan_data_t));
