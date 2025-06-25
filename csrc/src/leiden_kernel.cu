@@ -76,10 +76,18 @@ __global__ void move_nodes_fast_kernel(
 
     // total edge weight of incoming edges from old community
     float k_vc_old = 0.0;
+    // for (uint32_t i = offset; i < offset_next; i++) {
+    //     uint32_t neigh = indices[i];
+    //     if (node_data[neigh].community == curr_comm) {
+    //         k_vc_old += weights[i];
+    //     }
+    // }
+
     for (uint32_t i = offset; i < offset_next; i++) {
-        uint32_t neigh = indices[i];
-        if (node_data[neigh].community == curr_comm) {
-            k_vc_old += weights[i];
+        uint32_t neighbor_comm = node_to_comm_comms_final[i];
+        if (neighbor_comm == curr_comm) {
+            k_vc_old = node_to_comm_weights_final[i];
+            break;
         }
     }
 
@@ -886,7 +894,7 @@ void move_nodes_fast(
         move_nodes_fast_iter++;
 
         // printf("Move nodes fast iter: %d\n", move_nodes_fast_iter);
-        if (move_nodes_fast_iter == 100) {
+        if (move_nodes_fast_iter == 10) {
             break;
         }
     }

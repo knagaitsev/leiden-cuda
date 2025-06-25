@@ -16,3 +16,4 @@ Results for wikipedia_link_mi graph:
 1. Runtime for 10 iterations of greedy move_nodes_fast:  92.6771s (naive approach with 2d nested loops over all edges of a node in each loop)
 2. New runtime for 10 iterations of greedy move_nodes_fast: 1.55551s (gather communities that a node is adjacent to, along with total weight to those communities, in a separate, optimized kernel)
     - note that this timing includes a lot of overhead from allocations
+3. 1.33797s after a slight improvement to move_nodes_fast kernel and other minor changes (stopped iterating over all edges of a node in the kernel)
