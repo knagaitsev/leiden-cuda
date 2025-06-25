@@ -625,7 +625,7 @@ void checkCudaError() {
     }
 }
 
-void move_nodes_fast(
+void leiden_internal(
     uint32_t *offsets,
     uint32_t *indices,
     float *weights,

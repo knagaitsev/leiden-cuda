@@ -188,9 +188,11 @@ int main() {
     std::cout << "Indices size: " << indices.size() << "\n";
     std::cout << "Weights size: " << weights.size() << "\n";
 
+    float gamma = 0.05;
+
     auto stopwatch = StopWatchLinux();
     stopwatch.start();
-    leiden(offsets, indices, weights);
+    leiden(offsets, indices, weights, gamma);
     stopwatch.stop();
 
     auto time_ms = stopwatch.getTime();
