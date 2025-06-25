@@ -2,26 +2,24 @@
 #include <cuda_runtime.h>
 #include <iostream>
 #include <cub/cub.cuh>
+#include <curand.h>
+#include <curand_kernel.h>
 
-__global__ void add_kernel(float* a, float* b, float* c, int N) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < N) c[idx] = a[idx] + b[idx];
+__global__ void init_rng(curandState *state, unsigned long seed) {
+    int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    curand_init(seed, tid, 0, &state[tid]);
 }
 
-extern "C" void launch_add_kernel(float* a, float* b, float* c, int N) {
-    float *d_a, *d_b, *d_c;
-    cudaMalloc(&d_a, N * sizeof(float));
-    cudaMalloc(&d_b, N * sizeof(float));
-    cudaMalloc(&d_c, N * sizeof(float));
+__global__ void generate_random(float *random_numbers, curandState *state, int vertex_count) {
+    int tid = threadIdx.x + blockIdx.x * blockDim.x;
 
-    cudaMemcpy(d_a, a, N * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_b, b, N * sizeof(float), cudaMemcpyHostToDevice);
+    if (tid >= vertex_count) {
+        return;
+    }
 
-    add_kernel<<<(N + 255) / 256, 256>>>(d_a, d_b, d_c, N);
-
-    cudaMemcpy(c, d_c, N * sizeof(float), cudaMemcpyDeviceToHost);
-
-    cudaFree(d_a); cudaFree(d_b); cudaFree(d_c);
+    curandState local_state = state[tid];
+    random_numbers[tid] = curand_uniform(&local_state); // Range: (0.0, 1.0]
+    state[tid] = local_state; // Save state back
 }
 
 // two approaches to doing move_nodes_fast: parallelizing at node level is below
@@ -42,13 +40,22 @@ __global__ void move_nodes_fast_kernel(
     uint32_t *node_moves,
     uint32_t *node_to_comm_counts_final,
     uint32_t *node_to_comm_comms_final,
-    float *node_to_comm_weights_final
+    float *node_to_comm_weights_final,
+    float *d_random
 ) {
     unsigned int node = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (node >= vertex_count) {
         return;
     }
+
+    float rand = d_random[node];
+
+    if (rand > 0.2) {
+        return;
+    }
+
+    // printf("Node: %d, Rand: %f\n", node, rand);
 
     uint32_t offset = offsets[node];
     uint32_t offset_next = offset + node_to_comm_counts_final[node];
@@ -722,7 +729,17 @@ void move_nodes_fast(
 
     int move_nodes_fast_iter = 0;
 
+    float *d_random;
+    curandState *d_state;
+
+    cudaMalloc(&d_random, vertex_count * sizeof(float));
+    cudaMalloc(&d_state, vertex_count * sizeof(curandState));
+
+    init_rng<<<dim_grid, dim_block>>>(d_state, 1234);
+
     while (true) {
+        generate_random<<<dim_grid, dim_block>>>(d_random, d_state, vertex_count);
+
         move_nodes_fast_kernel <<<dim_grid, dim_block>>> (
             offsets_device,
             indices_device,
@@ -739,7 +756,8 @@ void move_nodes_fast(
             node_moves_device,
             node_to_comm_counts_final_device,
             node_to_comm_comms_final_device,
-            node_to_comm_weights_final_device
+            node_to_comm_weights_final_device,
+            d_random
         );
         cudaDeviceSynchronize();
 
@@ -864,7 +882,7 @@ void move_nodes_fast(
         move_nodes_fast_iter++;
 
         printf("Move nodes fast iter: %d\n", move_nodes_fast_iter);
-        if (move_nodes_fast_iter == 10) {
+        if (move_nodes_fast_iter == 200) {
             break;
         }
     }
@@ -887,7 +905,7 @@ void move_nodes_fast(
             // printf("Node %d, comm: %d, weight: %f\n", node, comm, weight);
         }
 
-        printf("Node %d, comm_count: %d, weight_tot: %f\n", node, comm_count, weight_tot);
+        // printf("Node %d, comm_count: %d, weight_tot: %f\n", node, comm_count, weight_tot);
     }
 
     printf("move_nodes_fast complete, checking for CUDA error...\n");
