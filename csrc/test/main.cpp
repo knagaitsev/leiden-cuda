@@ -108,15 +108,11 @@ offsets_indices_weights_t to_csr(edge_list_t edge_list) {
     return std::make_pair(offsets, std::make_pair(indices, weights));
 }
 
-int main() {
-    // std::ifstream file("validation/clique_ring.txt");
-    std::ifstream file("data/wikipedia_link_mi/out.wikipedia_link_mi");
-    // std::ifstream file("data/arenas-jazz/out.arenas-jazz");
-    // std::ifstream file("data/flickr-groupmemberships/out.flickr-groupmemberships");
+edge_list_t load_edge_list(std::string filename) {
+    std::ifstream file(filename);
 
     if (!file.is_open()) {
-        std::cerr << "Failed to open file.\n";
-        return 1;
+        throw new std::runtime_error("Failed to open file");
     }
 
     edge_list_t edge_list;
@@ -171,8 +167,16 @@ int main() {
         edge_data.first.second -= min_vertex_idx;
     }
 
-    // std::cout << "Edge list len: " << edge_list.size() << "\n";
+    return edge_list;
+}
 
+int main() {
+    // auto filename = std::string("validation/clique_ring.txt");
+    auto filename = std::string("data/wikipedia_link_mi/out.wikipedia_link_mi");
+    // auto filename = std::string("data/arenas-jazz/out.arenas-jazz");
+    // auto filename = std::string("data/flickr-groupmemberships/out.flickr-groupmemberships");
+
+    auto edge_list = load_edge_list(filename);
     auto offsets_indices_weights = to_csr(edge_list);
     auto offsets = offsets_indices_weights.first;
     auto indices_weights = offsets_indices_weights.second;
@@ -180,7 +184,6 @@ int main() {
     auto weights = indices_weights.second;
 
     std::cout << "Vertex count: " << (offsets.size() - 1) << "\n";
-
     std::cout << "Offsets size: " << offsets.size() << "\n";
     std::cout << "Indices size: " << indices.size() << "\n";
     std::cout << "Weights size: " << weights.size() << "\n";
@@ -195,26 +198,5 @@ int main() {
 
     std::cout << "Runtime: " << time_s << "s\n";
 
-    // int N = 1024;
-    // float *a = new float[N];
-    // float *b = new float[N];
-    // float *c = new float[N];
-
-    // for (int i = 0; i < N; ++i) {
-    //     a[i] = 1.0f;
-    //     b[i] = 2.0f;
-    // }
-
-    // leiden(a, b, c, N);
-
-    // std::cout << "Result: ";
-    // for (int i = 0; i < 10; ++i) {
-    //     std::cout << c[i] << " ";
-    // }
-    // std::cout << "...\n";
-
-    // delete[] a;
-    // delete[] b;
-    // delete[] c;
     return 0;
 }
