@@ -1,6 +1,7 @@
 #include "leiden/leiden_kernel.cuh"
 #include <cuda_runtime.h>
 #include <iostream>
+#include <cub/cub.cuh>
 
 __global__ void add_kernel(float* a, float* b, float* c, int N) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -182,6 +183,8 @@ __global__ void gather_node_to_comm_comms_weights_kernel(
     uint32_t offset = offsets[node];
     uint32_t offset_next = offsets[node + 1];
 
+    // uint32_t node_edge_count = offset_next - offset;
+
     for (uint32_t i = offset; i < offset_next; i++) {
         uint32_t neighbor = indices[i];
         float weight = weights[i];
@@ -189,6 +192,8 @@ __global__ void gather_node_to_comm_comms_weights_kernel(
         // uint32_t prev_comm = orig_node_comms[neighbor];
         uint32_t curr_comm = node_data[neighbor].community;
 
+        // node_to_comm_comms[offset + (i + 1) % node_edge_count] = curr_comm;
+        // node_to_comm_weights[offset + (i + 1) % node_edge_count] = weight;
         node_to_comm_comms[i] = curr_comm;
         node_to_comm_weights[i] = weight;
     }
@@ -690,8 +695,38 @@ void move_nodes_fast(
         cudaDeviceSynchronize();
         checkCudaError();
 
-        copy_from_device(node_to_comm_comms, node_to_comm_comms_device, edge_count);
-        copy_from_device(node_to_comm_weights, node_to_comm_weights_device, edge_count);
+        uint32_t* node_to_comm_comms_sorted_device;
+        int node_to_comm_comms_size = edge_count * sizeof(uint32_t);
+        cudaMalloc((void**)&node_to_comm_comms_sorted_device, node_to_comm_comms_size);
+
+        float* node_to_comm_weights_sorted_device;
+        int node_to_comm_weights_size = edge_count * sizeof(float);
+        cudaMalloc((void**)&node_to_comm_weights_sorted_device, node_to_comm_weights_size);
+
+        void *d_temp_storage = nullptr;
+        size_t temp_storage_bytes = 0;
+        cub::DeviceSegmentedRadixSort::SortPairs(
+            d_temp_storage, temp_storage_bytes,
+            node_to_comm_comms_device,
+            node_to_comm_comms_sorted_device,
+            node_to_comm_weights_device,
+            node_to_comm_weights_sorted_device,
+            edge_count, vertex_count, offsets_device, offsets_device + 1);
+
+        // Allocate temporary storage
+        cudaMalloc(&d_temp_storage, temp_storage_bytes);
+
+        // Run sorting operation
+        cub::DeviceSegmentedRadixSort::SortPairs(
+            d_temp_storage, temp_storage_bytes,
+            node_to_comm_comms_device,
+            node_to_comm_comms_sorted_device,
+            node_to_comm_weights_device,
+            node_to_comm_weights_sorted_device,
+            edge_count, vertex_count, offsets_device, offsets_device + 1);
+
+        copy_from_device(node_to_comm_comms, node_to_comm_comms_sorted_device, edge_count);
+        copy_from_device(node_to_comm_weights, node_to_comm_weights_sorted_device, edge_count);
 
         for (int node = 0; node < vertex_count; node++) {
             uint32_t offset = offsets[node];
