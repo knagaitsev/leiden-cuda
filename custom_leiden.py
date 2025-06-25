@@ -5,6 +5,7 @@ import networkx as nx
 import copy
 import math
 import queue
+from collections import defaultdict
 
 class CommunityData:
     def __init__(self, G, community):
@@ -235,19 +236,26 @@ def move_modularity_change(G, community_graph, node, next_comm):
     return delta_Q
 
 def cpm(G, gamma):
-    tot = 0
+    # Group nodes by community
+    comm_nodes = defaultdict(set)
+    for node, data in G.nodes(data=True):
+        comm_nodes[data["community"]].add(node)
 
-    edges = G.edges(data=True)
-    for u, v, edge_data in edges:
-        weight = edge_data.get("weight", 1)
+    tot = 0.0
 
-        data_u = G.nodes[u]
-        data_v = G.nodes[v]
-        comm_u = data_u["community"]
-        comm_v = data_v["community"]
+    for comm, nodes in comm_nodes.items():
+        # Subgraph of nodes in this community
+        subG = G.subgraph(nodes)
+        
+        # Total internal edge weight (for undirected graphs, each edge counts once)
+        internal_weight = sum(
+            data.get("weight", 1) for u, v, data in subG.edges(data=True)
+        )
 
-        if comm_u == comm_v:
-            tot += weight - gamma
+        n = len(nodes)
+        max_possible_edges = n * (n - 1) / 2
+
+        tot += internal_weight - gamma * max_possible_edges
 
     return tot
 
@@ -782,20 +790,20 @@ def main():
     G.graph["m"] = m
     print(f"Total edge weight: {m}")
 
-    # assign_singleton_communities(G)
-    # community_graph = construct_community_graph(G)
+    assign_singleton_communities(G)
+    community_graph = construct_community_graph(G)
 
     gamma = 0.09
 
-    # print(f"Start CPM: {cpm(G, gamma)}")
+    print(f"Start CPM: {cpm(G, gamma)}")
 
-    # # delta = cpm_change(G, community_graph, 0, 1, gamma)
-    # # print(f"Delta: {delta}")
-    # # move_node(G, community_graph, 0, 1)
+    delta = cpm_change(G, community_graph, 0, 1, gamma)
+    print(f"Delta: {delta}")
+    move_node(G, community_graph, 0, 1)
 
     # move_nodes_fast(G, community_graph, gamma)
 
-    # print(f"End CPM: {cpm(G, gamma)}")
+    print(f"End CPM: {cpm(G, gamma)}")
 
     # G = nx.read_edgelist("../validation/clique_ring.txt", nodetype=int)
 
@@ -813,7 +821,7 @@ def main():
     # print(f"Modularity: {modularity(G)}")
     # louvain_move_nodes(G, community_graph)
     # print(f"Modularity: {modularity(G)}")
-    print(custom_leiden(G, gamma))
+    # print(custom_leiden(G, gamma))
 
 if __name__ == "__main__":
     main()

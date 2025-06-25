@@ -607,7 +607,7 @@ __global__ void cpm_kernel(
     int edge_count,
     int comm_count,
     float gamma,
-    float *cpm_node_internal_sums
+    float *cpm_comm_internal_sums
 ) {
     unsigned int node = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -634,13 +634,13 @@ __global__ void cpm_kernel(
 
         if (neighbor == node) {
             // everything else is double counted, so we need to double if it is a self-edge
-            tot += 2.0 * (weight - gamma);
+            tot += 2.0 * weight;
         } else {
-            tot += weight - gamma;
+            tot += weight;
         }
     }
 
-    cpm_node_internal_sums[node] = tot;
+    atomicAdd(&(cpm_comm_internal_sums[curr_comm]), tot);
 }
 
 template <typename T>
@@ -760,9 +760,9 @@ void leiden_internal(
     float *node_to_comm_weights_final_device = allocate_and_copy_to_device(weights, edge_count);
 
     // this is for computing CPM on the GPU at the end
-    float *cpm_node_internal_sums = (float *)malloc(vertex_count * sizeof(float));
-    memset(cpm_node_internal_sums, 0, vertex_count * sizeof(float));
-    float *cpm_node_internal_sums_device = allocate_and_copy_to_device(cpm_node_internal_sums, vertex_count);
+    float *cpm_comm_internal_sums = (float *)malloc(comm_count * sizeof(float));
+    memset(cpm_comm_internal_sums, 0, comm_count * sizeof(float));
+    float *cpm_comm_internal_sums_device = allocate_and_copy_to_device(cpm_comm_internal_sums, comm_count);
 
 
     for (int i = 0; i < vertex_count; i++) {
@@ -948,8 +948,8 @@ void leiden_internal(
 
         move_nodes_fast_iter++;
 
-        // printf("Move nodes fast iter: %d\n", move_nodes_fast_iter);
-        if (move_nodes_fast_iter == 10) {
+        printf("Move nodes fast iter: %d\n", move_nodes_fast_iter);
+        if (move_nodes_fast_iter == 100) {
             break;
         }
     }
@@ -1005,15 +1005,23 @@ void leiden_internal(
         edge_count,
         comm_count,
         gamma,
-        cpm_node_internal_sums_device
+        cpm_comm_internal_sums_device
     );
 
-    copy_from_device(cpm_node_internal_sums, cpm_node_internal_sums_device, vertex_count);
+    copy_from_device(cpm_comm_internal_sums, cpm_comm_internal_sums_device, vertex_count);
 
     float cpm_tot = 0.0f;
 
-    for (int i = 0; i < vertex_count; i++) {
-        cpm_tot += cpm_node_internal_sums[i];
+    for (int i = 0; i < comm_count; i++) {
+        uint32_t agg_count = comm_data[i].agg_count;
+        if (agg_count > 0) {
+            float internal_weight_sum = cpm_comm_internal_sums[i];
+            printf("Partition %u count: %u, %f\n", i, agg_count, internal_weight_sum);
+            cpm_tot += internal_weight_sum - gamma * ((float)(agg_count * (agg_count - 1)));
+            // should there be / 2.0 here, as in agg_count * (agg_count - 1) / 2.0?
+            // I believe not, since everything in internal_weight_sum is double counted
+            // so we should also double count the max possible edges
+        }
     }
 
     float cpm = cpm_tot;
