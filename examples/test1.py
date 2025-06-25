@@ -19,8 +19,8 @@ curr_path = Path(os.path.realpath(os.path.dirname(__file__)))
 
 # Create a graph
 # G = nx.karate_club_graph()
-G = nx.read_edgelist(curr_path / "../data/flickr-groupmemberships/out.flickr-groupmemberships", comments="%")
-# G = nx.read_edgelist(curr_path / "../data/arenas-jazz/out.arenas-jazz", comments="%")
+# G = nx.read_edgelist(curr_path / "../data/flickr-groupmemberships/out.flickr-groupmemberships", comments="%")
+G = nx.read_edgelist(curr_path / "../data/arenas-jazz/out.arenas-jazz", comments="%")
 
 # data_path = Path.resolve(curr_path / "../validation/clique_ring.txt")
 # G = nx.read_edgelist(data_path, nodetype=int)
@@ -44,10 +44,10 @@ print(f"Has self loops: {has_self_loops}")
 # Compute communities using the Louvain method
 start = time.time()
 
-communities = leiden_communities(G, seed=42, resolution=1, max_level=None, backend="cugraph")
+# communities = leiden_communities(G, seed=42, resolution=1, max_level=None, backend="cugraph")
 # communities = louvain_communities(G, seed=42, resolution=1, backend="cugraph")
 # communities = custom_louvain(G)
-# communities = custom_leiden(G, gamma=0.05, max_iter=0)
+communities = custom_leiden(G, gamma=0.1)
 
 # communities = louvain_communities(G, seed=42, resolution=1, backend="parallel")
 end = time.time()
@@ -55,8 +55,6 @@ end = time.time()
 print(f"Runtime: {end - start:.4f} seconds")
 
 print(f"Community count: {len(communities)}")
-
-exit(0)
 
 # Print the communities
 for i, community in enumerate(communities):
@@ -80,5 +78,5 @@ nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
 
 figs_dir = Path.resolve(curr_path / "../figs")
 
-# plt.savefig(figs_dir / "jazz_leiden.pdf")
-plt.savefig(figs_dir / "clique_ring_leiden.pdf")
+plt.savefig(figs_dir / "jazz_leiden.pdf")
+# plt.savefig(figs_dir / "clique_ring_leiden.pdf")

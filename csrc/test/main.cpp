@@ -78,9 +78,18 @@ offsets_indices_weights_t to_csr(edge_list_t edge_list) {
 
     auto curr_offset = 0;
     auto idx = 0;
+
+    auto nodes_without_neighbors_count = 0;
+
     for (auto kv : vertex_map) {
         if (idx != kv.first) {
-            throw std::runtime_error("to_csr currently assumes that vertex labels are densely packed from 0->n");
+            // std::cout << "Expected idx: " << idx << " Got idx: " << kv.first << ", adding vertex with no neighbors\n"; 
+            // throw std::runtime_error("to_csr currently assumes that vertex labels are densely packed from 0->n");
+            while (idx < kv.first) {
+                nodes_without_neighbors_count++;
+                offsets.push_back(curr_offset);
+                idx++;
+            }
         }
 
         vertices.push_back(kv.first);
@@ -104,6 +113,10 @@ offsets_indices_weights_t to_csr(edge_list_t edge_list) {
         idx++;
     }
     offsets.push_back(curr_offset);
+
+    if (nodes_without_neighbors_count > 0) {
+        std::cout << "WARNING: got " << nodes_without_neighbors_count << " nodes without neighbors\n";
+    }
 
     return std::make_pair(offsets, std::make_pair(indices, weights));
 }
@@ -173,8 +186,10 @@ edge_list_t load_edge_list(std::string filename) {
 int main() {
     // auto filename = std::string("validation/clique_ring.txt");
     // auto filename = std::string("data/wikipedia_link_mi/out.wikipedia_link_mi");
-    auto filename = std::string("data/arenas-jazz/out.arenas-jazz");
+    // auto filename = std::string("data/arenas-jazz/out.arenas-jazz");
     // auto filename = std::string("data/flickr-groupmemberships/out.flickr-groupmemberships");
+    auto filename = std::string("data/youtube-links/out.youtube-links");
+    // auto filename = std::string("data/flickr-links/out.flickr-links");
 
     auto edge_list = load_edge_list(filename);
     auto offsets_indices_weights = to_csr(edge_list);

@@ -949,7 +949,7 @@ void leiden_internal(
         move_nodes_fast_iter++;
 
         printf("Move nodes fast iter: %d\n", move_nodes_fast_iter);
-        if (move_nodes_fast_iter == 100) {
+        if (move_nodes_fast_iter == 10) {
             break;
         }
     }
@@ -1016,7 +1016,7 @@ void leiden_internal(
         uint32_t agg_count = comm_data[i].agg_count;
         if (agg_count > 0) {
             float internal_weight_sum = cpm_comm_internal_sums[i];
-            printf("Partition %u count: %u, %f\n", i, agg_count, internal_weight_sum);
+            // printf("Partition %u count: %u, %f\n", i, agg_count, internal_weight_sum);
             cpm_tot += internal_weight_sum - gamma * ((float)(agg_count * (agg_count - 1)));
             // should there be / 2.0 here, as in agg_count * (agg_count - 1) / 2.0?
             // I believe not, since everything in internal_weight_sum is double counted

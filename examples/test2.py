@@ -17,6 +17,19 @@ curr_path = Path(os.path.realpath(os.path.dirname(__file__)))
 # G_nx = nx.read_edgelist(curr_path / "../data/wikipedia_link_mi/out.wikipedia_link_mi", comments="%")
 # G_nx = nx.read_edgelist(curr_path / "../data/dimacs10-uk-2002/out.dimacs10-uk-2002", comments="%")
 G_nx = nx.read_edgelist(curr_path / "../data/youtube-links/out.youtube-links", comments="%")
+# G_nx = nx.read_edgelist(curr_path / "../data/arenas-jazz/out.arenas-jazz", comments="%")
+
+top_10 = sorted(G_nx.degree, key=lambda x: x[1], reverse=True)[:10]
+
+# Print the top 10
+for node, degree in top_10:
+    print(f"Node {node} has degree {degree}")
+
+num_nodes = G_nx.number_of_nodes()
+num_edges = G_nx.number_of_edges()
+
+print(f"Number of nodes: {num_nodes}")
+print(f"Number of edges: {num_edges}")
 
 coo = nx.to_scipy_sparse_array(G_nx, format='coo')
 

@@ -11,3 +11,6 @@ tar -xvjf data/download.tsv.arenas-jazz.tar.bz2 -C data/
 
 wget -P data --no-clobber http://konect.cc/files/download.tsv.youtube-links.tar.bz2
 tar -xvjf data/download.tsv.youtube-links.tar.bz2 -C data/
+
+# wget -P data --no-clobber http://konect.cc/files/download.tsv.flickr-links.tar.bz2
+# tar -xvjf data/download.tsv.flickr-links.tar.bz2 -C data/
