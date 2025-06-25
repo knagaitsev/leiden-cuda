@@ -242,31 +242,34 @@ __global__ void scan_node_to_comm_comms_weights_kernel(
         return;
     }
 
-    int node_comm_count = 1;
+    uint32_t node_comm_count = 1;
     uint32_t curr_comm = node_to_comm_comms_sorted[offset];
     float weight_tot = 0.0f;
-    int curr_comm_edge_count = 0;
 
     for (uint32_t i = offset; i < offset_next; i++) {
         uint32_t next_comm = node_to_comm_comms_sorted[i];
         float weight = node_to_comm_weights_sorted[i];
 
         if (next_comm != curr_comm) {
-            // TODO: save curr_comm_edge_count and weight_tot here
+            // save curr_comm and weight_tot here
+            node_to_comm_comms_final[offset + node_comm_count - 1] = curr_comm;
+            node_to_comm_weights_final[offset + node_comm_count - 1] = weight_tot;
 
             node_comm_count++;
-            curr_comm_edge_count = 0;
             weight_tot = 0.0f;
         }
 
-        curr_comm_edge_count++;
         weight_tot += weight;
         curr_comm = next_comm;
     }
 
-    // TODO: save final curr_comm_edge_count and weight_tot here
+    // save final curr_comm and weight_tot here
+    node_to_comm_comms_final[offset + node_comm_count - 1] = curr_comm;
+    node_to_comm_weights_final[offset + node_comm_count - 1] = weight_tot;
 
-    printf("Node %d comm count: %d\n", node, node_comm_count);
+    // printf("Node %d comm count: %d\n", node, node_comm_count);
+
+    node_to_comm_counts_final[node] = node_comm_count;
 }
 
 __global__ void create_partition_kernel(
@@ -682,6 +685,9 @@ void move_nodes_fast(
         node_to_comm_counts_final[i] = offsets[i + 1] - offsets[i];
     }
 
+    uint32_t *node_to_comm_comms_final = (uint32_t *)malloc(edge_count * sizeof(uint32_t));
+    float *node_to_comm_weights_final = (float *)malloc(edge_count * sizeof(float));
+
     uint32_t *node_to_comm_counts_final_device = allocate_and_copy_to_device(node_to_comm_counts_final, vertex_count);
     uint32_t *node_to_comm_comms_final_device = allocate_and_copy_to_device(indices, edge_count);
     float *node_to_comm_weights_final_device = allocate_and_copy_to_device(weights, edge_count);
@@ -833,21 +839,20 @@ void move_nodes_fast(
         cudaDeviceSynchronize();
         checkCudaError();
         
-        copy_from_device(node_to_comm_comms, node_to_comm_comms_sorted_device, edge_count);
-        copy_from_device(node_to_comm_weights, node_to_comm_weights_sorted_device, edge_count);
+        // copy_from_device(node_to_comm_comms, node_to_comm_comms_sorted_device, edge_count);
+        // copy_from_device(node_to_comm_weights, node_to_comm_weights_sorted_device, edge_count);
 
-        for (int node = 0; node < vertex_count; node++) {
-            uint32_t offset = offsets[node];
-            uint32_t offset_next = offsets[node + 1];
+        // for (int node = 0; node < vertex_count; node++) {
+        //     uint32_t offset = offsets[node];
+        //     uint32_t offset_next = offsets[node + 1];
 
-            for (int i = offset; i < offset_next; i++) {
-                uint32_t comm = node_to_comm_comms[i];
-                float weight = node_to_comm_weights[i];
+        //     for (int i = offset; i < offset_next; i++) {
+        //         uint32_t comm = node_to_comm_comms[i];
+        //         float weight = node_to_comm_weights[i];
 
-                printf("Node %d, comm: %d, weight: %f\n", node, comm, weight);
-            }
-        }
-        return;
+        //         printf("Node %d, comm: %d, weight: %f\n", node, comm, weight);
+        //     }
+        // }
 
         // reset changed
         cudaMemset((void *)changed_device, 0, sizeof(bool));
@@ -862,6 +867,27 @@ void move_nodes_fast(
         if (move_nodes_fast_iter == 10) {
             break;
         }
+    }
+
+    copy_from_device(node_to_comm_counts_final, node_to_comm_counts_final_device, vertex_count);
+    copy_from_device(node_to_comm_comms_final, node_to_comm_comms_final_device, edge_count);
+    copy_from_device(node_to_comm_weights_final, node_to_comm_weights_final_device, edge_count);
+
+    for (int node = 0; node < vertex_count; node++) {
+        uint32_t offset = offsets[node];
+        uint32_t comm_count = node_to_comm_counts_final[node];
+        uint32_t offset_next = offset + comm_count;
+        float weight_tot = 0.0f;
+
+        for (int i = offset; i < offset_next; i++) {
+            // uint32_t comm = node_to_comm_comms[i];
+            float weight = node_to_comm_weights_final[i];
+
+            weight_tot += weight;
+            // printf("Node %d, comm: %d, weight: %f\n", node, comm, weight);
+        }
+
+        printf("Node %d, comm_count: %d, weight_tot: %f\n", node, comm_count, weight_tot);
     }
 
     printf("move_nodes_fast complete, checking for CUDA error...\n");
