@@ -1,9 +1,9 @@
 #include "leiden/leiden_kernel.cuh"
 #include <cuda_runtime.h>
 #include <iostream>
-#include <cub/cub.cuh>
 #include <curand.h>
 #include <curand_kernel.h>
+// #include <cub/cub.cuh>
 
 __global__ void init_rng(curandState *state, unsigned long seed) {
     int tid = threadIdx.x + blockIdx.x * blockDim.x;

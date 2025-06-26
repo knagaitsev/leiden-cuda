@@ -1,18 +1,22 @@
 [
     {
-        "label": "initial",
+        "label": "step1-init",
         "runtime": 92.6771
     },
     {
-        "label": "step2",
+        "label": "step2-sort",
         "runtime": 1.55551
     },
     {
-        "label": "step3",
+        "label": "step3-minor",
         "runtime": 1.33797
     },
     {
-        "label": "step4",
-        "runtime": 1.34113
+        "label": "step4-remove-sort",
+        "runtime": 2.06248
+    },
+    {
+        "label": "step5-edge-par",
+        "runtime": 0.606221
     }
 ]
