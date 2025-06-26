@@ -185,10 +185,10 @@ edge_list_t load_edge_list(std::string filename) {
 
 int main() {
     // auto filename = std::string("validation/clique_ring.txt");
-    // auto filename = std::string("data/wikipedia_link_mi/out.wikipedia_link_mi");
+    auto filename = std::string("data/wikipedia_link_mi/out.wikipedia_link_mi");
     // auto filename = std::string("data/arenas-jazz/out.arenas-jazz");
     // auto filename = std::string("data/flickr-groupmemberships/out.flickr-groupmemberships");
-    auto filename = std::string("data/youtube-links/out.youtube-links");
+    // auto filename = std::string("data/youtube-links/out.youtube-links");
     // auto filename = std::string("data/flickr-links/out.flickr-links");
 
     auto edge_list = load_edge_list(filename);

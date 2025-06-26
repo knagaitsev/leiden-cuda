@@ -52,15 +52,18 @@ __global__ void move_nodes_fast_kernel(
 
     float rand = d_random[node];
 
-    if (rand > 0.5) {
-        return;
-    }
-
     // printf("Node: %d, Rand: %f\n", node, rand);
 
     uint32_t offset = offsets[node];
     uint32_t offset_next = offset + node_to_comm_counts_final[node];
     // uint32_t offset_next = offsets[node + 1];
+
+    for (uint32_t i = offset; i < offset_next; i++) {
+        uint32_t neighbor = indices[i];
+        if (rand < d_random[neighbor]) {
+            return;
+        }
+    }
 
     uint32_t curr_comm = node_data[node].community;
 
@@ -128,24 +131,27 @@ __global__ void move_nodes_fast_kernel(
         }
     }
 
-    // uint32_t comm_lo = curr_comm;
-    // uint32_t comm_hi = best_comm;
-    // if (best_comm < curr_comm) {
-    //     comm_lo = best_comm;
-    //     comm_hi = curr_comm;
-    // }
+    uint32_t comm_lo = curr_comm;
+    uint32_t comm_hi = best_comm;
+    if (best_comm < curr_comm) {
+        comm_lo = best_comm;
+        comm_hi = curr_comm;
+    }
 
     if (best_comm != curr_comm) {
-        // if (atomicCAS(&(comm_locks[comm_lo]), 0, 1) == 0 && atomicCAS(&(comm_locks[comm_hi]), 0, 1) == 0) {
-        //     // node_data[node].community = best_comm;
-        //     // comm_data[best_comm].agg_count += node_agg_count;
-        //     // comm_data[curr_comm].agg_count -= node_agg_count;
-        //     node_moves[node] = best_comm;
-        //     *changed = true;
-        // }
+        if (atomicCAS(&(comm_locks[comm_lo]), 0, 1) == 0 && atomicCAS(&(comm_locks[comm_hi]), 0, 1) == 0) {
+            // node_data[node].community = best_comm;
+            // comm_data[best_comm].agg_count += node_agg_count;
+            // comm_data[curr_comm].agg_count -= node_agg_count;
+            node_moves[node] = best_comm;
+            *changed = true;
+        }
 
-        node_moves[node] = best_comm;
-        *changed = true;
+        // if (best_delta > 1.0) {
+        //     printf("Moving node: %d, to comm: %d, delta: %f\n", node, best_comm, best_delta);
+        // }
+        // node_moves[node] = best_comm;
+        // *changed = true;
     }
 }
 
@@ -1133,8 +1139,11 @@ void leiden_internal(
         uint32_t agg_count = comm_data[i].agg_count;
         if (agg_count > 0) {
             float internal_weight_sum = cpm_comm_internal_sums[i];
-            // printf("Partition %u count: %u, %f\n", i, agg_count, internal_weight_sum);
-            cpm_tot += internal_weight_sum - gamma * ((float)(agg_count * (agg_count - 1)));
+            float contribution = internal_weight_sum - gamma * ((float)(agg_count * (agg_count - 1)));
+            // if (contribution < 0) {
+            //     printf("Partition %u count: %u, %f\n", i, agg_count, internal_weight_sum);
+            // }
+            cpm_tot += contribution;
             // should there be / 2.0 here, as in agg_count * (agg_count - 1) / 2.0?
             // I believe not, since everything in internal_weight_sum is double counted
             // so we should also double count the max possible edges
