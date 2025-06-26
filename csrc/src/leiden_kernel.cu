@@ -42,11 +42,16 @@ __global__ void move_nodes_fast_kernel(
     uint32_t *node_to_comm_counts_final,
     uint32_t *node_to_comm_comms_final,
     float *node_to_comm_weights_final,
-    float *d_random
+    float *d_random,
+    bool *node_visited
 ) {
     unsigned int node = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (node >= vertex_count) {
+        return;
+    }
+
+    if (node_visited[node]) {
         return;
     }
 
@@ -60,7 +65,9 @@ __global__ void move_nodes_fast_kernel(
 
     for (uint32_t i = offset; i < offset_next; i++) {
         uint32_t neighbor = indices[i];
-        if (rand < d_random[neighbor]) {
+        // if your neighbor hasn't been visited and you have a smaller rand, the
+        // neighbor wins in the graph coloring
+        if (!node_visited[neighbor] && rand < d_random[neighbor]) {
             return;
         }
     }
@@ -144,7 +151,8 @@ __global__ void move_nodes_fast_kernel(
             // comm_data[best_comm].agg_count += node_agg_count;
             // comm_data[curr_comm].agg_count -= node_agg_count;
             node_moves[node] = best_comm;
-            *changed = true;
+            node_visited[node] = true;
+            // *changed = true;
         }
 
         // if (best_delta > 1.0) {
@@ -152,6 +160,24 @@ __global__ void move_nodes_fast_kernel(
         // }
         // node_moves[node] = best_comm;
         // *changed = true;
+    } else {
+        node_visited[node] = true;
+    }
+}
+
+__global__ void has_zero_kernel(
+    bool *node_visited,
+    int vertex_count,
+    bool *has_zero
+) {
+    unsigned int node = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (node >= vertex_count) {
+        return;
+    }
+
+    if (!node_visited[node]) {
+        *has_zero = true;
     }
 }
 
@@ -242,7 +268,8 @@ __global__ void apply_node_moves_kernel(
     float gamma,
     bool *changed,
     uint32_t *partition,
-    uint32_t *node_moves
+    uint32_t *node_moves,
+    bool *node_visited
 ) {
     unsigned int node = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -260,6 +287,18 @@ __global__ void apply_node_moves_kernel(
         // comm_data[curr_comm].agg_count -= node_agg_count;
         atomicAdd(&(comm_data[best_comm].agg_count), node_agg_count);
         atomicAdd(&(comm_data[curr_comm].agg_count), -node_agg_count);
+
+        uint32_t offset = offsets[node];
+        uint32_t offset_next = offsets[node + 1];
+
+        for (int i = offset; i < offset_next; i++) {
+            uint32_t neighbor = indices[i];
+            if (neighbor == node) {
+                continue;   
+            }
+
+            node_visited[neighbor] = false;
+        }
     }
 }
 
@@ -789,6 +828,7 @@ void leiden_internal(
     // - or should we reorder the data structure to ensure a warp coalesces global memory accesses?
 
     bool *changed = (bool *)malloc(sizeof(bool));
+    bool *has_zero = (bool *)malloc(sizeof(bool));
     // cudaMemset((void *)binsDevice, 0, binsSize);
 
     int *comm_locks = (int *)malloc(comm_count * sizeof(int));
@@ -824,6 +864,7 @@ void leiden_internal(
     uint32_t *node_agg_counts_device = allocate_and_copy_to_device(node_agg_counts, vertex_count);
     comm_data_t *comm_data_device = allocate_and_copy_to_device(comm_data, comm_count);
     bool *changed_device = allocate_and_copy_to_device(changed, 1);
+    bool *has_zero_device = allocate_and_copy_to_device(has_zero, 1);
     uint32_t *orig_node_comms_device = allocate_and_copy_to_device(orig_node_comms, vertex_count);
 
     uint32_t *partition = (uint32_t *)malloc(vertex_count * sizeof(uint32_t));
@@ -864,6 +905,9 @@ void leiden_internal(
     *partition_count_host = 0;
     uint32_t *partition_count_device = allocate_and_copy_to_device(partition_count_host, 1);
 
+    bool *node_visited = (bool *)malloc(vertex_count * sizeof(bool));
+    memset(node_visited, 0, vertex_count * sizeof(bool));
+    bool *node_visited_device = allocate_and_copy_to_device(node_visited, vertex_count);
 
     for (int i = 0; i < vertex_count; i++) {
         node_refined_comms[i] = i;
@@ -946,15 +990,30 @@ void leiden_internal(
             node_to_comm_counts_final_device,
             node_to_comm_comms_final_device,
             node_to_comm_weights_final_device,
-            d_random
+            d_random,
+            node_visited_device
         );
         cudaDeviceSynchronize();
 
-        copy_from_device(changed, changed_device, 1);
+        has_zero_kernel <<<dim_grid, dim_block>>> (
+            node_visited_device,
+            vertex_count,
+            has_zero_device
+        );
+        cudaDeviceSynchronize();
 
-        if (!*changed) {
+        copy_from_device(has_zero, has_zero_device, 1);
+
+        if (!*has_zero) {
+            printf("No more unvisited nodes!\n");
             break;
         }
+
+        // copy_from_device(changed, changed_device, 1);
+
+        // if (!*changed) {
+        //     break;
+        // }
 
         apply_node_moves_kernel <<<dim_grid, dim_block>>> (
             offsets_device,
@@ -970,7 +1029,8 @@ void leiden_internal(
             gamma,
             changed_device,
             partition_device,
-            node_moves_device
+            node_moves_device,
+            node_visited_device
         );
         cudaDeviceSynchronize();
 
@@ -1071,9 +1131,9 @@ void leiden_internal(
         prev_partition_count = *partition_count_host;
 
         printf("Move nodes fast iter: %d, partition count: %d\n", move_nodes_fast_iter, prev_partition_count);
-        if (move_nodes_fast_iter == 10) {
-            break;
-        }
+        // if (move_nodes_fast_iter == 1000) {
+        //     break;
+        // }
     }
 
     // copy_from_device(node_data, node_data_device, vertex_count);
