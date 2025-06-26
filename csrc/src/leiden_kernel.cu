@@ -50,11 +50,11 @@ __global__ void move_nodes_fast_kernel(
         return;
     }
 
-    float rand = d_random[node];
+    // float rand = d_random[node];
 
-    if (rand > 0.5) {
-        return;
-    }
+    // if (rand > 0.5) {
+    //     return;
+    // }
 
     // printf("Node: %d, Rand: %f\n", node, rand);
 
@@ -85,7 +85,8 @@ __global__ void move_nodes_fast_kernel(
     // }
 
     for (uint32_t i = offset; i < offset_next; i++) {
-        uint32_t neighbor_comm = node_to_comm_comms_final[i];
+        uint32_t neighbor = indices[i];
+        uint32_t neighbor_comm = node_data[neighbor].community;
         if (neighbor_comm == curr_comm) {
             k_vc_old = node_to_comm_weights_final[i];
             break;
@@ -93,17 +94,16 @@ __global__ void move_nodes_fast_kernel(
     }
 
     for (uint32_t i = offset; i < offset_next; i++) {
-        // uint32_t neighbor = indices[i];
+        uint32_t neighbor = indices[i];
+        uint32_t neighbor_comm = node_data[neighbor].community;
+        // uint32_t neighbor_comm = node_data[i].community;
 
-        // uint32_t neighbor_comm = node_data[neighbor].community;
-        uint32_t neighbor_comm = node_to_comm_comms_final[i];
-
-        // if (neighbor_comm == curr_comm || neighbor_comm == best_comm) {
-        //     continue;
-        // }
-        if (neighbor_comm == curr_comm) {
+        if (neighbor_comm == curr_comm || neighbor_comm == best_comm) {
             continue;
         }
+        // if (neighbor_comm == curr_comm) {
+        //     continue;
+        // }
 
         // aggregate count of nodes in new community (excluding current node)
         int agg_count_new = comm_data[neighbor_comm].agg_count;
@@ -146,6 +146,75 @@ __global__ void move_nodes_fast_kernel(
 
         node_moves[node] = best_comm;
         *changed = true;
+    }
+}
+
+__global__ void gather_new_neighbor_comm_weights_kernel(
+    uint32_t *offsets,
+    uint32_t *indices,
+    float *weights,
+    float *node_to_comm_weights,
+    node_data_t *node_data,
+    comm_data_t *comm_data,
+    int *comm_locks,
+    int vertex_count,
+    int edge_count,
+    int comm_count,
+    float gamma,
+    uint32_t *node_moves
+) {
+    unsigned int node = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (node >= vertex_count) {
+        return;
+    }
+
+    uint32_t curr_comm = node_data[node].community;
+    uint32_t best_comm = node_moves[node];
+
+    if (curr_comm == best_comm) {
+        return;
+    }
+
+    uint32_t offset = offsets[node];
+    uint32_t offset_next = offsets[node + 1];
+
+    // uint32_t node_edge_count = offset_next - offset;
+
+    for (int i = offset; i < offset_next; i++) {
+        uint32_t neigh = indices[i];
+        float weight = weights[i];
+
+        uint32_t n_offset = offsets[neigh];
+        uint32_t n_offset_next = offsets[neigh + 1];
+
+        // uint32_t prev_comm = orig_node_comms[neighbor];
+        // uint32_t curr_comm = node_data[neighbor].community;
+
+        // node_to_comm_comms[i] = curr_comm;
+        // node_to_comm_weights[i] = weight;
+
+        // trying to iterate the communities that neighbor is a neighbor of
+        // bool found_old = false;
+        // bool found_new = false;
+
+        for (int j = n_offset; j < n_offset_next; j++) {
+            uint32_t n_neigh = indices[j];
+
+            uint32_t n_comm = node_data[n_neigh].community;
+
+            if (n_comm == curr_comm) {
+                atomicAdd(&(node_to_comm_weights[j]), -weight);
+                // found_old = true;
+            } else if (n_comm == best_comm) {
+                atomicAdd(&(node_to_comm_weights[j]), weight);
+                // found_new = true;
+            }
+
+            // if (found_old && found_new) {
+            //     break;
+            // }
+        }
     }
 }
 
@@ -831,18 +900,18 @@ void leiden_internal(
     int node_to_comm_weights_size = edge_count * sizeof(float);
     cudaMalloc((void**)&node_to_comm_weights_sorted_device, node_to_comm_weights_size);
 
-    void *d_temp_storage = nullptr;
-    size_t temp_storage_bytes = 0;
-    cub::DeviceSegmentedRadixSort::SortPairs(
-        d_temp_storage, temp_storage_bytes,
-        node_to_comm_comms_device,
-        node_to_comm_comms_sorted_device,
-        node_to_comm_weights_device,
-        node_to_comm_weights_sorted_device,
-        edge_count, vertex_count, offsets_device, offsets_device + 1);
+    // void *d_temp_storage = nullptr;
+    // size_t temp_storage_bytes = 0;
+    // cub::DeviceSegmentedRadixSort::SortPairs(
+    //     d_temp_storage, temp_storage_bytes,
+    //     node_to_comm_comms_device,
+    //     node_to_comm_comms_sorted_device,
+    //     node_to_comm_weights_device,
+    //     node_to_comm_weights_sorted_device,
+    //     edge_count, vertex_count, offsets_device, offsets_device + 1);
 
-    // Allocate temporary storage
-    cudaMalloc(&d_temp_storage, temp_storage_bytes);
+    // // Allocate temporary storage
+    // cudaMalloc(&d_temp_storage, temp_storage_bytes);
 
     uint32_t prev_partition_count = comm_count;
 
@@ -877,6 +946,26 @@ void leiden_internal(
             break;
         }
 
+        // HERE WE WILL PARALLELIZE BY EDGES, updating node_to_comm_weights_final_device
+        // FOR THE DST NODE, modifying atomically both the old comm and the new comm weight that the 
+
+        gather_new_neighbor_comm_weights_kernel <<<dim_grid, dim_block>>> (
+            offsets_device,
+            indices_device,
+            weights_device,
+            node_to_comm_weights_final_device,
+            node_data_device,
+            comm_data_device,
+            comm_locks_device,
+            vertex_count,
+            edge_count,
+            comm_count,
+            gamma,
+            node_moves_device
+        );
+        cudaDeviceSynchronize();
+        checkCudaError();
+
         apply_node_moves_kernel <<<dim_grid, dim_block>>> (
             offsets_device,
             indices_device,
@@ -895,72 +984,57 @@ void leiden_internal(
         );
         cudaDeviceSynchronize();
 
-        gather_node_to_comm_comms_weights_kernel <<<dim_grid, dim_block>>> (
-            offsets_device,
-            indices_device,
-            weights_device,
-            node_to_comm_comms_device,
-            node_to_comm_weights_device,
-            node_data_device,
-            comm_data_device,
-            comm_locks_device,
-            vertex_count,
-            edge_count,
-            comm_count,
-            gamma,
-            changed_device,
-            partition_device,
-            node_moves_device
-        );
-        cudaDeviceSynchronize();
-        checkCudaError();
+        // gather_node_to_comm_comms_weights_kernel <<<dim_grid, dim_block>>> (
+        //     offsets_device,
+        //     indices_device,
+        //     weights_device,
+        //     node_to_comm_comms_device,
+        //     node_to_comm_weights_device,
+        //     node_data_device,
+        //     comm_data_device,
+        //     comm_locks_device,
+        //     vertex_count,
+        //     edge_count,
+        //     comm_count,
+        //     gamma,
+        //     changed_device,
+        //     partition_device,
+        //     node_moves_device
+        // );
+        // cudaDeviceSynchronize();
+        // checkCudaError();
 
         // Run sorting operation
-        cub::DeviceSegmentedRadixSort::SortPairs(
-            d_temp_storage, temp_storage_bytes,
-            node_to_comm_comms_device,
-            node_to_comm_comms_sorted_device,
-            node_to_comm_weights_device,
-            node_to_comm_weights_sorted_device,
-            edge_count, vertex_count, offsets_device, offsets_device + 1);
+        // cub::DeviceSegmentedRadixSort::SortPairs(
+        //     d_temp_storage, temp_storage_bytes,
+        //     node_to_comm_comms_device,
+        //     node_to_comm_comms_sorted_device,
+        //     node_to_comm_weights_device,
+        //     node_to_comm_weights_sorted_device,
+        //     edge_count, vertex_count, offsets_device, offsets_device + 1);
 
-        scan_node_to_comm_comms_weights_kernel <<<dim_grid, dim_block>>> (
-            offsets_device,
-            indices_device,
-            weights_device,
-            node_to_comm_comms_sorted_device,
-            node_to_comm_weights_sorted_device,
-            node_data_device,
-            comm_data_device,
-            comm_locks_device,
-            vertex_count,
-            edge_count,
-            comm_count,
-            gamma,
-            changed_device,
-            partition_device,
-            node_moves_device,
-            node_to_comm_counts_final_device,
-            node_to_comm_comms_final_device,
-            node_to_comm_weights_final_device
-        );
-        cudaDeviceSynchronize();
-        checkCudaError();
-        
-        // copy_from_device(node_to_comm_comms, node_to_comm_comms_sorted_device, edge_count);
-        // copy_from_device(node_to_comm_weights, node_to_comm_weights_sorted_device, edge_count);
-
-        // for (int node = 0; node < vertex_count; node++) {
-        //     uint32_t offset = offsets[node];
-        //     uint32_t offset_next = offsets[node + 1];
-
-        //     for (int i = offset; i < offset_next; i++) {
-        //         uint32_t comm = node_to_comm_comms[i];
-        //         float weight = node_to_comm_weights[i];
-
-        //         printf("Node %d, comm: %d, weight: %f\n", node, comm, weight);
-        //     }
-        // }
+        // scan_node_to_comm_comms_weights_kernel <<<dim_grid, dim_block>>> (
+        //     offsets_device,
+        //     indices_device,
+        //     weights_device,
+        //     node_to_comm_comms_sorted_device,
+        //     node_to_comm_weights_sorted_device,
+        //     node_data_device,
+        //     comm_data_device,
+        //     comm_locks_device,
+        //     vertex_count,
+        //     edge_count,
+        //     comm_count,
+        //     gamma,
+        //     changed_device,
+        //     partition_device,
+        //     node_moves_device,
+        //     node_to_comm_counts_final_device,
+        //     node_to_comm_comms_final_device,
+        //     node_to_comm_weights_final_device
+        // );
+        // cudaDeviceSynchronize();
+        // checkCudaError();
 
         // reset changed
         cudaMemset((void *)changed_device, 0, sizeof(bool));
@@ -985,7 +1059,7 @@ void leiden_internal(
         prev_partition_count = *partition_count_host;
 
         printf("Move nodes fast iter: %d, partition count: %d\n", move_nodes_fast_iter, prev_partition_count);
-        if (move_nodes_fast_iter == 1) {
+        if (move_nodes_fast_iter == 200) {
             break;
         }
     }
@@ -1031,8 +1105,6 @@ void leiden_internal(
     // copy_from_device(node_data, node_data_device, vertex_count);
     // copy_from_device(comm_data, comm_data_device, comm_count);
 
-    return;
-
     cpm_kernel <<<dim_grid, dim_block>>> (
         offsets_device,
         indices_device,
@@ -1064,6 +1136,8 @@ void leiden_internal(
     float cpm = cpm_tot;
 
     printf("CPM: %f\n", cpm);
+
+    return;
 
     // TODO: we can get away with making this smaller, but it changes the indexing approach in the next kernel
     part_scan_data_t *part_scan_data = (part_scan_data_t *)malloc(comm_count * sizeof(part_scan_data_t));

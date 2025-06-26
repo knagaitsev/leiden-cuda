@@ -21,4 +21,4 @@ Results for wikipedia_link_mi graph:
     - note that this timing includes a lot of overhead from allocations
 3. 1.33797s after a slight improvement to move_nodes_fast kernel and other minor changes (stopped iterating over all edges of a node in the kernel)
 4. 1.34113s get partition count at every iteration of greedy algorithm now, but make a somewhat naive kernel for it instead of doing it on cpu
-5. 
+5. 1.2772s remove the community sorting approach, replace it with an approach in which we go to all the neighbors of a moved node, and update their neighbor comm weights according to this particular change
