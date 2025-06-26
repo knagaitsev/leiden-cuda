@@ -33,16 +33,22 @@ public:
     }
 };
 
-// TODO: make self-edges and duplicate edges work here
-offsets_indices_weights_t to_csr(edge_list_t edge_list) {
-    std::map<uint32_t, EdgeStore> vertex_map;
+struct csr_result_t {
+    std::vector<uint32_t> offsets;
+    std::vector<uint32_t> indices;
+    std::vector<float> weights;
+    std::vector<uint32_t> full_edge_list_u;
+    std::vector<uint32_t> full_edge_list_v;
+};
 
+// TODO: make self-edges and duplicate edges work here
+csr_result_t to_csr(edge_list_t edge_list) {
+    std::map<uint32_t, EdgeStore> vertex_map;
     int edge_count = 0;
 
     for (auto edge_data : edge_list) {
         auto edge = edge_data.first;
         auto weight = edge_data.second;
-
         auto u = edge.first;
         auto v = edge.second;
 
@@ -55,7 +61,6 @@ offsets_indices_weights_t to_csr(edge_list_t edge_list) {
             EdgeStore neighbors;
             neighbors.insert(new_edge_to_v);
             vertex_map[u] = neighbors;
-
             edge_count++;
         }
 
@@ -70,55 +75,43 @@ offsets_indices_weights_t to_csr(edge_list_t edge_list) {
 
     std::cout << "Edge count: " << edge_count << "\n";
 
-    std::vector<uint32_t> vertices;
-
-    std::vector<uint32_t> offsets;
-    std::vector<uint32_t> indices;
-    std::vector<float> weights;
+    csr_result_t result;
 
     auto curr_offset = 0;
     auto idx = 0;
-
     auto nodes_without_neighbors_count = 0;
 
     for (auto kv : vertex_map) {
-        if (idx != kv.first) {
-            // std::cout << "Expected idx: " << idx << " Got idx: " << kv.first << ", adding vertex with no neighbors\n"; 
-            // throw std::runtime_error("to_csr currently assumes that vertex labels are densely packed from 0->n");
-            while (idx < kv.first) {
-                nodes_without_neighbors_count++;
-                offsets.push_back(curr_offset);
-                idx++;
-            }
+        while (idx < kv.first) {
+            nodes_without_neighbors_count++;
+            result.offsets.push_back(curr_offset);
+            idx++;
         }
 
-        vertices.push_back(kv.first);
-        
-        // std::cout << "vertex: " << kv.first << "\n";
-
         auto edge_weights = kv.second.edge_weights;
-
         std::sort(edge_weights.begin(), edge_weights.end(), [](const auto& a, const auto& b) {
             return a.first < b.first;
         });
 
         for (auto edge_data : edge_weights) {
-            indices.push_back(edge_data.first);
-            weights.push_back(edge_data.second);
+            result.full_edge_list_u.push_back(kv.first);
+            result.full_edge_list_v.push_back(edge_data.first);
+            result.indices.push_back(edge_data.first);
+            result.weights.push_back(edge_data.second);
         }
 
-        offsets.push_back(curr_offset);
+        result.offsets.push_back(curr_offset);
         curr_offset += edge_weights.size();
-
         idx++;
     }
-    offsets.push_back(curr_offset);
+
+    result.offsets.push_back(curr_offset);
 
     if (nodes_without_neighbors_count > 0) {
         std::cout << "WARNING: got " << nodes_without_neighbors_count << " nodes without neighbors\n";
     }
 
-    return std::make_pair(offsets, std::make_pair(indices, weights));
+    return result;
 }
 
 edge_list_t load_edge_list(std::string filename) {
@@ -185,29 +178,33 @@ edge_list_t load_edge_list(std::string filename) {
 
 int main() {
     // auto filename = std::string("validation/clique_ring.txt");
-    // auto filename = std::string("data/wikipedia_link_mi/out.wikipedia_link_mi");
-    auto filename = std::string("data/arenas-jazz/out.arenas-jazz");
+    auto filename = std::string("data/wikipedia_link_mi/out.wikipedia_link_mi");
+    // auto filename = std::string("data/arenas-jazz/out.arenas-jazz");
     // auto filename = std::string("data/flickr-groupmemberships/out.flickr-groupmemberships");
     // auto filename = std::string("data/youtube-links/out.youtube-links");
     // auto filename = std::string("data/flickr-links/out.flickr-links");
 
     auto edge_list = load_edge_list(filename);
-    auto offsets_indices_weights = to_csr(edge_list);
-    auto offsets = offsets_indices_weights.first;
-    auto indices_weights = offsets_indices_weights.second;
-    auto indices = indices_weights.first;
-    auto weights = indices_weights.second;
+    auto csr_result = to_csr(edge_list);
+    auto offsets = csr_result.offsets;
+    auto indices = csr_result.indices;
+    auto weights = csr_result.weights;
+    auto full_edge_list_u = csr_result.full_edge_list_u;
+    auto full_edge_list_v = csr_result.full_edge_list_v;
 
     std::cout << "Vertex count: " << (offsets.size() - 1) << "\n";
     std::cout << "Offsets size: " << offsets.size() << "\n";
     std::cout << "Indices size: " << indices.size() << "\n";
     std::cout << "Weights size: " << weights.size() << "\n";
 
+    std::cout << "full_edge_list_u size: " << full_edge_list_u.size() << "\n";
+    std::cout << "full_edge_list_v size: " << full_edge_list_v.size() << "\n";
+
     float gamma = 0.05;
 
     auto stopwatch = StopWatchLinux();
     stopwatch.start();
-    leiden(offsets, indices, weights, gamma);
+    leiden(offsets, indices, weights, full_edge_list_u, full_edge_list_v, gamma);
     stopwatch.stop();
 
     auto time_ms = stopwatch.getTime();

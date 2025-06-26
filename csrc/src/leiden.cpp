@@ -7,7 +7,7 @@
 #include <map>
 #include <algorithm>
 
-void leiden(std::vector<uint32_t> offsets, std::vector<uint32_t> indices, std::vector<float> weights, float gamma) {
+void leiden(std::vector<uint32_t> offsets, std::vector<uint32_t> indices, std::vector<float> weights, std::vector<uint32_t> full_edge_list_u, std::vector<uint32_t> full_edge_list_v, float gamma) {
     int vertex_count = offsets.size() - 1;
     int edge_count = indices.size();
 
@@ -34,7 +34,7 @@ void leiden(std::vector<uint32_t> offsets, std::vector<uint32_t> indices, std::v
 
     int comm_count = vertex_count;
 
-    leiden_internal(offsets.data(), indices.data(), weights.data(), node_data.data(), node_agg_counts.data(), comm_data.data(), vertex_count, edge_count, comm_count, gamma);
+    leiden_internal(offsets.data(), indices.data(), weights.data(), full_edge_list_u.data(), full_edge_list_v.data(), node_data.data(), node_agg_counts.data(), comm_data.data(), vertex_count, edge_count, comm_count, gamma);
 
     // for (int i = 0; i < vertex_count; i++) {
     //     std::cout << "Vertex " << i << " community: " << node_data[i].community << "\n";

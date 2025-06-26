@@ -24,6 +24,8 @@ void leiden_internal(
     uint32_t *offsets,
     uint32_t *indices,
     float *weights,
+    uint32_t *full_edge_list_u,
+    uint32_t *full_edge_list_v,
     node_data_t *node_data,
     uint32_t *node_agg_counts,
     comm_data_t *comm_data,

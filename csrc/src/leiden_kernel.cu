@@ -184,6 +184,48 @@ __global__ void has_zero_kernel(
     }
 }
 
+__global__ void edge_gather_new_neighbor_comm_weights_kernel(
+    uint32_t *offsets,
+    uint32_t *indices,
+    float *weights,
+    float *node_to_comm_weights,
+    node_data_t *node_data,
+    comm_data_t *comm_data,
+    int *comm_locks,
+    int vertex_count,
+    int edge_count,
+    int comm_count,
+    float gamma,
+    uint32_t *node_moves,
+    uint32_t *full_edge_list_u,
+    uint32_t *full_edge_list_v
+) {
+    unsigned int edge_idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (edge_idx >= edge_count) {
+        return;
+    }
+
+    uint32_t node = full_edge_list_u[edge_idx];
+    uint32_t neigh = full_edge_list_v[edge_idx];
+    uint32_t weight = weights[edge_idx];
+
+    uint32_t curr_comm = node_data[node].community;
+
+    uint32_t n_offset = offsets[neigh];
+    uint32_t n_offset_next = offsets[neigh + 1];
+
+    for (int j = n_offset; j < n_offset_next; j++) {
+        uint32_t n_neigh = indices[j];
+
+        uint32_t n_comm = node_data[n_neigh].community;
+
+        if (n_comm == curr_comm) {
+            atomicAdd(&(node_to_comm_weights[j]), weight);
+        }
+    }
+}
+
 __global__ void gather_new_neighbor_comm_weights_kernel(
     uint32_t *offsets,
     uint32_t *indices,
@@ -816,6 +858,8 @@ void leiden_internal(
     uint32_t *offsets,
     uint32_t *indices,
     float *weights,
+    uint32_t *full_edge_list_u,
+    uint32_t *full_edge_list_v,
     node_data_t *node_data,
     uint32_t *node_agg_counts,
     comm_data_t *comm_data,
@@ -858,6 +902,8 @@ void leiden_internal(
     uint32_t *offsets_device = allocate_and_copy_to_device(offsets, vertex_count + 1);
     uint32_t *indices_device = allocate_and_copy_to_device(indices, edge_count);
     float *weights_device = allocate_and_copy_to_device(weights, edge_count);
+    uint32_t *full_edge_list_u_device = allocate_and_copy_to_device(full_edge_list_u, edge_count);
+    uint32_t *full_edge_list_v_device = allocate_and_copy_to_device(full_edge_list_v, edge_count);
 
     // these can technically be uninitialized since we initialize them in a kernel
     uint32_t *node_to_comm_comms_device = allocate_and_copy_to_device(node_to_comm_comms, edge_count);
@@ -935,8 +981,14 @@ void leiden_internal(
         grid_size += 1;
     }
 
-    printf("Vertex count: %d, Block size: %d, grid size: %d\n", vertex_count, block_size, grid_size);
+    int edge_grid_size = edge_count / block_size;
+    if (edge_count % block_size != 0) {
+        edge_grid_size += 1;
+    }
 
+    printf("Vertex count: %d, Block size: %d, grid size: %d, edge grid size: %d\n", vertex_count, block_size, grid_size, edge_grid_size);
+
+    dim3 edge_dim_grid(edge_grid_size);
     dim3 dim_grid(grid_size);
  	dim3 dim_block(block_size);
 
@@ -1045,7 +1097,7 @@ void leiden_internal(
 
         cudaMemset((void *)node_to_comm_weights_final_device, 0, edge_count * sizeof(float));
 
-        gather_new_neighbor_comm_weights_kernel <<<dim_grid, dim_block>>> (
+        edge_gather_new_neighbor_comm_weights_kernel <<<edge_dim_grid, dim_block>>> (
             offsets_device,
             indices_device,
             weights_device,
@@ -1057,10 +1109,29 @@ void leiden_internal(
             edge_count,
             comm_count,
             gamma,
-            node_moves_device
+            node_moves_device,
+            full_edge_list_u_device,
+            full_edge_list_v_device
         );
         cudaDeviceSynchronize();
         checkCudaError();
+
+        // gather_new_neighbor_comm_weights_kernel <<<dim_grid, dim_block>>> (
+        //     offsets_device,
+        //     indices_device,
+        //     weights_device,
+        //     node_to_comm_weights_final_device,
+        //     node_data_device,
+        //     comm_data_device,
+        //     comm_locks_device,
+        //     vertex_count,
+        //     edge_count,
+        //     comm_count,
+        //     gamma,
+        //     node_moves_device
+        // );
+        // cudaDeviceSynchronize();
+        // checkCudaError();
 
         // gather_node_to_comm_comms_weights_kernel <<<dim_grid, dim_block>>> (
         //     offsets_device,
@@ -1137,9 +1208,9 @@ void leiden_internal(
         prev_partition_count = *partition_count_host;
 
         printf("Move nodes fast iter: %d, partition count: %d\n", move_nodes_fast_iter, prev_partition_count);
-        // if (move_nodes_fast_iter == 1000) {
-        //     break;
-        // }
+        if (move_nodes_fast_iter == 10) {
+            break;
+        }
     }
 
     // copy_from_device(node_data, node_data_device, vertex_count);
