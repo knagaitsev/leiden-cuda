@@ -1,4 +1,6 @@
-Simple setup:
+## Leiden CUDA
+
+**Simple setup to just run CUDA implementation:**
 
 ```bash
 ./tools/fetch_datasets.sh
@@ -6,6 +8,14 @@ cmake -S . -B build
 cmake --build build
 ./build/csrc/leiden_test
 ```
+
+This repository contains the following:
+
+- Limited Leiden CUDA implementation - has refinement phase that works for small graphs, but focuses on greedy CPM node movement (`csrc/src/leiden_kernel.cu`)
+- Fully working custom Leiden Python implementation (`custom_leiden.py`)
+- Fully working custom Louvain Python implementation (`custom_louvain.py`)
+
+## Running Python Code & Profiling
 
 Advanced setup to run other tests:
 
