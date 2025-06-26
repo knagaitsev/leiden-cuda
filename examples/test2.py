@@ -46,8 +46,8 @@ G = cugraph.from_adjlist(offsets, indices, None)
 vary_max_iter = False
 
 # warmup
-# cugraph.leiden(G)
-cugraph.louvain(G)
+cugraph.leiden(G)
+# cugraph.louvain(G)
 
 if vary_max_iter:
     runtimes = []
@@ -68,11 +68,12 @@ if vary_max_iter:
         json.dump(runtimes, f)
 else:
     start = time.time()
-    # partitions = cugraph.leiden(G, max_iter=1)
-    partitions = cugraph.louvain(G, max_level=1)
+    partitions = cugraph.leiden(G, max_iter=1)
+    # partitions = cugraph.louvain(G, max_level=1)
     end = time.time()
     runtime = end - start
     print(f"Runtime: {end - start:.4f} seconds")
+    print(f"Partition count: {len(partitions)}")
 
 # edges = cudf.DataFrame({
 #     'src': [0, 1, 2, 3, 4, 5, 6, 7],

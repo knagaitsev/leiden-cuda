@@ -65,6 +65,9 @@ __global__ void move_nodes_fast_kernel(
 
     for (uint32_t i = offset; i < offset_next; i++) {
         uint32_t neighbor = indices[i];
+        if (neighbor == node) {
+            continue;
+        }
         // if your neighbor hasn't been visited and you have a smaller rand, the
         // neighbor wins in the graph coloring
         if (!node_visited[neighbor] && rand < d_random[neighbor]) {
@@ -291,6 +294,7 @@ __global__ void apply_node_moves_kernel(
         uint32_t offset = offsets[node];
         uint32_t offset_next = offsets[node + 1];
 
+        // If you want to re-queue neighbors of a freshly moved node
         for (int i = offset; i < offset_next; i++) {
             uint32_t neighbor = indices[i];
             if (neighbor == node) {
@@ -1008,6 +1012,8 @@ void leiden_internal(
             printf("No more unvisited nodes!\n");
             break;
         }
+
+        cudaMemset((void *)has_zero_device, 0, sizeof(bool));
 
         // copy_from_device(changed, changed_device, 1);
 
