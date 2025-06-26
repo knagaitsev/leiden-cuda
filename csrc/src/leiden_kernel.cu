@@ -50,11 +50,11 @@ __global__ void move_nodes_fast_kernel(
         return;
     }
 
-    // float rand = d_random[node];
+    float rand = d_random[node];
 
-    // if (rand > 0.5) {
-    //     return;
-    // }
+    if (rand > 0.5) {
+        return;
+    }
 
     // printf("Node: %d, Rand: %f\n", node, rand);
 
@@ -170,11 +170,11 @@ __global__ void gather_new_neighbor_comm_weights_kernel(
     }
 
     uint32_t curr_comm = node_data[node].community;
-    uint32_t best_comm = node_moves[node];
+    // uint32_t best_comm = node_moves[node];
 
-    if (curr_comm == best_comm) {
-        return;
-    }
+    // if (curr_comm == best_comm) {
+    //     return;
+    // }
 
     uint32_t offset = offsets[node];
     uint32_t offset_next = offsets[node + 1];
@@ -204,12 +204,16 @@ __global__ void gather_new_neighbor_comm_weights_kernel(
             uint32_t n_comm = node_data[n_neigh].community;
 
             if (n_comm == curr_comm) {
-                atomicAdd(&(node_to_comm_weights[j]), -weight);
-                // found_old = true;
-            } else if (n_comm == best_comm) {
                 atomicAdd(&(node_to_comm_weights[j]), weight);
-                // found_new = true;
             }
+
+            // if (n_comm == curr_comm) {
+            //     atomicAdd(&(node_to_comm_weights[j]), -weight);
+            //     // found_old = true;
+            // } else if (n_comm == best_comm) {
+            //     atomicAdd(&(node_to_comm_weights[j]), weight);
+            //     // found_new = true;
+            // }
 
             // if (found_old && found_new) {
             //     break;
@@ -946,26 +950,6 @@ void leiden_internal(
             break;
         }
 
-        // HERE WE WILL PARALLELIZE BY EDGES, updating node_to_comm_weights_final_device
-        // FOR THE DST NODE, modifying atomically both the old comm and the new comm weight that the 
-
-        gather_new_neighbor_comm_weights_kernel <<<dim_grid, dim_block>>> (
-            offsets_device,
-            indices_device,
-            weights_device,
-            node_to_comm_weights_final_device,
-            node_data_device,
-            comm_data_device,
-            comm_locks_device,
-            vertex_count,
-            edge_count,
-            comm_count,
-            gamma,
-            node_moves_device
-        );
-        cudaDeviceSynchronize();
-        checkCudaError();
-
         apply_node_moves_kernel <<<dim_grid, dim_block>>> (
             offsets_device,
             indices_device,
@@ -983,6 +967,28 @@ void leiden_internal(
             node_moves_device
         );
         cudaDeviceSynchronize();
+
+        // HERE WE COULD PARALLELIZE BY EDGES, updating node_to_comm_weights_final_device
+        // FOR THE DST NODE, modifying atomically both the old comm and the new comm weight that the 
+
+        cudaMemset((void *)node_to_comm_weights_final_device, 0, edge_count * sizeof(float));
+
+        gather_new_neighbor_comm_weights_kernel <<<dim_grid, dim_block>>> (
+            offsets_device,
+            indices_device,
+            weights_device,
+            node_to_comm_weights_final_device,
+            node_data_device,
+            comm_data_device,
+            comm_locks_device,
+            vertex_count,
+            edge_count,
+            comm_count,
+            gamma,
+            node_moves_device
+        );
+        cudaDeviceSynchronize();
+        checkCudaError();
 
         // gather_node_to_comm_comms_weights_kernel <<<dim_grid, dim_block>>> (
         //     offsets_device,
@@ -1059,31 +1065,33 @@ void leiden_internal(
         prev_partition_count = *partition_count_host;
 
         printf("Move nodes fast iter: %d, partition count: %d\n", move_nodes_fast_iter, prev_partition_count);
-        if (move_nodes_fast_iter == 200) {
+        if (move_nodes_fast_iter == 10) {
             break;
         }
     }
 
-    copy_from_device(node_to_comm_counts_final, node_to_comm_counts_final_device, vertex_count);
-    copy_from_device(node_to_comm_comms_final, node_to_comm_comms_final_device, edge_count);
-    copy_from_device(node_to_comm_weights_final, node_to_comm_weights_final_device, edge_count);
+    // copy_from_device(node_data, node_data_device, vertex_count);
+    // copy_from_device(node_to_comm_counts_final, node_to_comm_counts_final_device, vertex_count);
+    // copy_from_device(node_to_comm_comms_final, node_to_comm_comms_final_device, edge_count);
+    // copy_from_device(node_to_comm_weights_final, node_to_comm_weights_final_device, edge_count);
 
-    for (int node = 0; node < vertex_count; node++) {
-        uint32_t offset = offsets[node];
-        uint32_t comm_count = node_to_comm_counts_final[node];
-        uint32_t offset_next = offset + comm_count;
-        float weight_tot = 0.0f;
+    // for (int node = 0; node < vertex_count; node++) {
+    //     uint32_t offset = offsets[node];
+    //     uint32_t comm_count = node_to_comm_counts_final[node];
+    //     uint32_t offset_next = offset + comm_count;
+    //     float weight_tot = 0.0f;
 
-        for (int i = offset; i < offset_next; i++) {
-            // uint32_t comm = node_to_comm_comms[i];
-            float weight = node_to_comm_weights_final[i];
+    //     for (int i = offset; i < offset_next; i++) {
+    //         uint32_t neigh = indices[i];
+    //         uint32_t comm = node_data[neigh].community;
+    //         float weight = node_to_comm_weights_final[i];
 
-            weight_tot += weight;
-            // printf("Node %d, comm: %d, weight: %f\n", node, comm, weight);
-        }
+    //         weight_tot += weight;
+    //         printf("Node %d, comm: %d, weight: %f\n", node, comm, weight);
+    //     }
 
-        // printf("Node %d, comm_count: %d, weight_tot: %f\n", node, comm_count, weight_tot);
-    }
+    //     printf("Node %d, comm_count: %d, weight_tot: %f\n", node, comm_count, weight_tot);
+    // }
 
     printf("move_nodes_fast complete, checking for CUDA error...\n");
     checkCudaError();

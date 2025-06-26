@@ -22,7 +22,8 @@ def compute_cpm(partition, gamma):
         total += internal_weight - gamma * (n_c * (n_c - 1) / 2)
     return total * 2
 
-data_path = (curr_path / "../data/youtube-links/out.youtube-links").resolve()
+data_path = (curr_path / "../data/wikipedia_link_mi/out.wikipedia_link_mi").resolve()
+# data_path = (curr_path / "../data/youtube-links/out.youtube-links").resolve()
 # data_path = (curr_path / "../data/arenas-jazz/out.arenas-jazz").resolve()
 # data_path = (curr_path / "../data/flickr-groupmemberships/out.flickr-groupmemberships").resolve()
 edges = []
@@ -42,15 +43,15 @@ gamma = 0.05
 n_iter=1
 
 
-optimiser = la.Optimiser()
-partition = la.CPMVertexPartition(G, resolution_parameter=0.05)
+# optimiser = la.Optimiser()
+# partition = la.CPMVertexPartition(G, resolution_parameter=0.05)
 
-start = time.time()
-# partition = la.find_partition(G, la.CPMVertexPartition, resolution_parameter=gamma, n_iterations=n_iter)
-res = optimiser.move_nodes(partition)
-end = time.time()
-runtime = end - start
-print(f"Runtime: {end - start:.4f} seconds")
+# start = time.time()
+# # partition = la.find_partition(G, la.CPMVertexPartition, resolution_parameter=gamma, n_iterations=n_iter)
+# res = optimiser.move_nodes(partition)
+# end = time.time()
+# runtime = end - start
+# print(f"Runtime: {end - start:.4f} seconds")
 
 # print(partition)
 
@@ -62,7 +63,9 @@ print(f"Runtime: {end - start:.4f} seconds")
 # res = optimiser.move_nodes(partition)
 # print(res)
 
-# diff = optimiser.optimise_partition(partition, n_iterations=1)
-# print(diff)
+optimiser = la.Optimiser()
+partition = la.CPMVertexPartition(G, resolution_parameter=0.05)
+diff = optimiser.optimise_partition(partition, n_iterations=1)
+print(diff)
 
 # ig.plot(partition)
